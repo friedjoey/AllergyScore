@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AllergyCast",
+  title: "AllergyScore",
   description: "Location-specific seasonal allergy severity forecasts."
 };
 

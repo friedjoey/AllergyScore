@@ -1,6 +1,6 @@
-# AllergyCast
+# AllergyScore
 
-AllergyCast is a hackathon MVP that estimates location-specific seasonal allergy severity from a user's allergy profile, symptoms, and pollen forecast data.
+AllergyScore estimates location-specific seasonal allergy severity from a user's allergy profile, symptoms, and pollen forecast data.
 
 ## Features
 
@@ -10,8 +10,6 @@ AllergyCast is a hackathon MVP that estimates location-specific seasonal allergy
 - Severity scoring from 0 to 100 with Low, Moderate, High, and Severe bands
 - 5-day forecast cards, trigger breakdown bars, and recommendation guidance
 - Daily symptom logging saved in `localStorage`
-- Demo mode with mock pollen/weather data when API coverage is limited or judges need a guaranteed walkthrough
-
 ## Run Locally
 
 ```bash
@@ -21,14 +19,7 @@ npm run dev
 
 Then open [http://localhost:3000](http://localhost:3000).
 
-For the easiest demo path:
-
-1. Run the two commands above.
-2. Open the app.
-3. Click **Demo mode** to load seeded pollen data immediately.
-4. Adjust allergies, sensitivities, symptoms, medication, and outdoor exposure to see the score change.
-
-To test live data, enter a city or ZIP code, or use GPS when the browser asks for location permission.
+Enter a city or ZIP code, or use GPS when the browser asks for location permission.
 
 ## API Notes
 
@@ -45,4 +36,4 @@ Create `.env.local` for Google Pollen:
 GOOGLE_POLLEN_API_KEY=your_key_here
 ```
 
-Open-Meteo pollen coverage varies by region. If pollen data is missing, the app shows a clear fallback message and can use seeded demo data.
+Open-Meteo pollen coverage varies by region. If pollen data is missing, the app shows a clear fallback message and uses weather context.

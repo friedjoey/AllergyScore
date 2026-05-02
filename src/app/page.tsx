@@ -8,7 +8,6 @@ import {
   Loader2,
   MapPin,
   Pill,
-  Radar,
   Search,
   Sprout,
   SunMedium
@@ -163,13 +162,12 @@ export default function Home() {
     };
   }, [query]);
 
-  async function loadForecast(nextProfile: UserProfile, demo = false) {
+  async function loadForecast(nextProfile: UserProfile) {
     setLoading(true);
     setError("");
 
     try {
       const params = new URLSearchParams({
-        demo: String(demo),
         label: nextProfile.locationLabel || "Selected location"
       });
 
@@ -300,21 +298,13 @@ export default function Home() {
         <div>
           <div className="flex items-center gap-2 text-sm font-semibold uppercase text-fern">
             <Sprout size={18} />
-            Hackathon MVP
+            Pollen risk forecast
           </div>
-          <h1 className="mt-2 text-4xl font-bold text-ink sm:text-5xl">AllergyCast</h1>
+          <h1 className="mt-2 text-4xl font-bold text-ink sm:text-5xl">AllergyScore</h1>
           <p className="mt-2 max-w-2xl text-base text-ink/70">
             A personalized pollen and weather risk dashboard for seasonal allergies.
           </p>
         </div>
-        <button
-          className="focus-ring inline-flex items-center justify-center gap-2 rounded-md bg-ink px-4 py-3 font-semibold text-white shadow-soft transition hover:bg-moss"
-          onClick={() => loadForecast(profile, true)}
-          type="button"
-        >
-          <Radar size={18} />
-          Demo mode
-        </button>
       </header>
 
       <section className="grid gap-5 lg:grid-cols-[1fr_380px]">
@@ -350,7 +340,7 @@ export default function Home() {
                   <div>
                     <h3 className="font-bold text-ink">What should I do?</h3>
                     <p className="mt-1 text-sm leading-6 text-ink/75">
-                      {today ? recommendationByLevel[today.level] : "Add a location or start demo mode to get guidance."}
+                      {today ? recommendationByLevel[today.level] : "Add a location to get guidance."}
                     </p>
                   </div>
                 </div>
@@ -389,14 +379,6 @@ export default function Home() {
                   <AlertTriangle className="mt-0.5 shrink-0" size={18} />
                   <span>{forecast.message}</span>
                   </div>
-                  <button
-                    className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-yellow-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-ink"
-                    onClick={() => loadForecast(profile, true)}
-                    type="button"
-                  >
-                    <Radar size={15} />
-                    Show demo pollen data
-                  </button>
                 </div>
               ) : null}
             </section>
@@ -408,9 +390,7 @@ export default function Home() {
               <span className="text-sm text-ink/60">
                 {forecast
                   ? `${
-                      forecast.source === "demo"
-                        ? "Seeded demo"
-                        : forecast.source === "google-pollen"
+                      forecast.source === "google-pollen"
                           ? "Google Pollen"
                           : "Open-Meteo"
                     } data for ${forecast.location.label}`
