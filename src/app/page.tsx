@@ -248,7 +248,7 @@ export default function Home() {
     };
   }, [query]);
 
-  async function loadForecast(nextProfile: UserProfile, demo = false) {
+  async function loadForecast(nextProfile: UserProfile) {
     setLoading(true);
     setError("");
 
@@ -256,8 +256,6 @@ export default function Home() {
       const params = new URLSearchParams({
         label: nextProfile.locationLabel || "Selected location"
       });
-
-      if (demo) params.set("demo", "true");
 
       if (nextProfile.latitude !== null && nextProfile.longitude !== null) {
         params.set("lat", String(nextProfile.latitude));
@@ -405,31 +403,24 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-7xl flex-col gap-6 px-4 py-5 sm:px-6 lg:px-8">
-      <header className="flex flex-col justify-between gap-4 border-b border-moss/10 pb-5 md:flex-row md:items-center">
+    <main className="mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-4 overflow-x-hidden px-3 py-3 sm:px-4 lg:px-5">
+      <header className="flex flex-col justify-between gap-2 border-b border-moss/10 pb-3 md:flex-row md:items-center">
         <div>
-          <div className="flex items-center gap-2 text-sm font-semibold uppercase text-fern">
-            <Sprout size={18} />
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase text-fern">
+            <Sprout size={15} />
             Pollen risk forecast
           </div>
-          <h1 className="mt-2 text-4xl font-bold text-ink sm:text-5xl">AllergyScore</h1>
-          <p className="mt-2 max-w-2xl text-base text-ink/70">
+          <h1 className="mt-1 text-3xl font-bold text-ink sm:text-4xl">AllergyScore</h1>
+          <p className="mt-1 max-w-2xl text-sm text-ink/70">
             A personalized pollen and weather risk dashboard for seasonal allergies.
           </p>
         </div>
-        <button
-          className="focus-ring inline-flex items-center justify-center gap-2 rounded-md border border-moss/20 px-4 py-3 font-semibold text-moss transition hover:bg-mint"
-          onClick={() => loadForecast(profile, true)}
-          type="button"
-        >
-          Demo data
-        </button>
       </header>
 
-      <section className="grid gap-5 xl:grid-cols-[320px_minmax(460px,1fr)_390px] xl:grid-rows-[auto_auto_auto] xl:items-stretch">
-        <aside className="order-1 flex flex-col gap-5 xl:col-start-1 xl:row-span-2 xl:row-start-1">
-          <section className="rounded-lg border border-moss/10 bg-white p-5 shadow-soft">
-            <h2 className="text-xl font-bold text-ink">Profile</h2>
+      <section className="grid w-full min-w-0 gap-4 xl:grid-cols-[minmax(260px,0.82fr)_minmax(0,1.35fr)_minmax(300px,0.95fr)] xl:grid-rows-[auto_auto_auto] xl:items-stretch">
+        <aside className="order-1 flex min-w-0 flex-col gap-4 xl:col-start-1 xl:row-span-2 xl:row-start-1">
+          <section className="rounded-lg border border-moss/10 bg-white p-3 shadow-soft">
+            <h2 className="text-lg font-bold text-ink">Profile</h2>
             <div className="mt-4 grid grid-cols-2 rounded-md bg-moss/10 p-1">
               {(["known", "general"] as const).map((mode) => (
                 <button
@@ -445,13 +436,13 @@ export default function Home() {
               ))}
             </div>
 
-            <form className="mt-4 space-y-4" onSubmit={submitLocation}>
+            <form className="mt-3 space-y-2.5" onSubmit={submitLocation}>
               <label className="block">
                 <span className="text-sm font-semibold text-ink/70">Location</span>
                 <div className="relative mt-2 flex gap-2">
                   <div className="relative min-w-0 flex-1">
                     <input
-                      className="focus-ring w-full rounded-md border border-moss/20 px-3 py-3"
+                      className="focus-ring w-full rounded-md border border-moss/20 px-3 py-2.5"
                       onChange={(event) => setQuery(event.target.value)}
                       placeholder="City or ZIP"
                       value={query}
@@ -480,7 +471,7 @@ export default function Home() {
                   </div>
                   <button
                     aria-label="Search location"
-                    className="focus-ring grid h-12 w-12 place-items-center rounded-md bg-fern text-white transition hover:bg-moss"
+                    className="focus-ring grid h-11 w-11 place-items-center rounded-md bg-fern text-white transition hover:bg-moss"
                     type="submit"
                   >
                     {loading ? <Loader2 className="animate-spin" size={19} /> : <Search size={19} />}
@@ -489,7 +480,7 @@ export default function Home() {
               </label>
 
               <button
-                className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-4 py-3 font-semibold text-moss transition hover:bg-mint"
+                className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-4 py-2.5 font-semibold text-moss transition hover:bg-mint"
                 onClick={useGps}
                 type="button"
               >
@@ -506,9 +497,9 @@ export default function Home() {
             </form>
 
             {profile.mode === "known" ? (
-              <div className="mt-5 space-y-4">
+              <div className="mt-3 space-y-2.5">
                 {(Object.keys(allergyLabels) as AllergyKey[]).map((key) => (
-                  <div key={key} className="rounded-md border border-moss/10 p-3">
+                  <div key={key} className="rounded-md border border-moss/10 p-2">
                     <div className="flex items-center justify-between gap-3">
                       <label className="flex items-center gap-2 font-semibold text-ink">
                         <input
@@ -527,7 +518,7 @@ export default function Home() {
                       <span className="text-sm text-ink/60">Sensitivity {profile.sensitivities[key]}</span>
                     </div>
                     <input
-                      className="mt-3 w-full"
+                      className="mt-2 w-full"
                       disabled={!profile.allergies[key]}
                       max={5}
                       min={1}
@@ -539,7 +530,7 @@ export default function Home() {
                 ))}
               </div>
             ) : (
-              <div className="mt-5 rounded-md border border-moss/10 bg-mint/30 p-4">
+              <div className="mt-4 rounded-md border border-moss/10 bg-mint/30 p-3">
                 <p className="font-bold text-ink">Estimate your sensitivities</p>
                 <div className="mt-4 space-y-3">
                   <label className="block text-sm font-semibold text-ink/70">
@@ -608,20 +599,20 @@ export default function Home() {
         </aside>
 
         <div className="order-2 contents">
-            <section className="flex min-h-[300px] flex-col justify-between rounded-lg border border-moss/10 bg-white p-5 shadow-soft xl:col-start-2 xl:row-start-1">
+            <section className="flex min-h-[240px] flex-col justify-between rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-2 xl:row-start-1">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold uppercase text-fern">Today</p>
-                  <h2 className="mt-1 text-3xl font-bold text-ink">
+                  <h2 className="mt-1 text-2xl font-bold text-ink">
                     {today ? today.level : "No forecast yet"}
                   </h2>
                 </div>
                 <div
-                  className={`grid h-32 w-32 shrink-0 place-items-center rounded-full border-[10px] sm:h-40 sm:w-40 sm:border-[12px] ${
+                  className={`grid h-24 w-24 shrink-0 place-items-center rounded-full border-8 sm:h-28 sm:w-28 ${
                     today ? levelStyles[today.level] : "border-moss/10 bg-mint/50 text-moss"
                   }`}
                 >
-                  <span className="text-4xl font-black sm:text-5xl">{today ? Math.round(today.score) : "--"}</span>
+                  <span className="text-3xl font-black">{today ? Math.round(today.score) : "--"}</span>
                 </div>
               </div>
 
@@ -632,7 +623,7 @@ export default function Home() {
                 />
               </div>
 
-              <div className="mt-5 rounded-md bg-skywash p-4">
+              <div className="mt-4 rounded-md bg-skywash p-3">
                 <div className="flex items-start gap-3">
                   <SunMedium className="mt-0.5 text-moss" size={20} />
                   <div>
@@ -649,7 +640,7 @@ export default function Home() {
               ) : null}
             </section>
 
-          <section className="flex min-h-[250px] flex-col justify-between rounded-lg border border-moss/10 bg-white p-5 shadow-soft xl:col-start-2 xl:row-start-2">
+          <section className="flex min-h-[210px] flex-col justify-between rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-2 xl:row-start-2">
             <p className="text-sm font-semibold uppercase text-fern">
               {profile.mode === "general"
                 ? "Average risk for allergy sufferers in your area"
@@ -657,7 +648,7 @@ export default function Home() {
             </p>
             <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <h2 className="text-5xl font-black text-ink">
+                <h2 className="text-4xl font-black text-ink">
                   {reaction ? Math.round(reaction.score) : "--"}
                 </h2>
                 <span
@@ -668,10 +659,10 @@ export default function Home() {
                   {reaction ? reaction.level : "Waiting"}
                 </span>
               </div>
-              <div className="h-28 w-28 rounded-full bg-moss/10 p-2">
+              <div className="h-24 w-24 rounded-full bg-moss/10 p-2">
                 <div className="grid h-full w-full place-items-center rounded-full bg-white">
                   <div
-                    className="h-20 w-20 rounded-full"
+                    className="h-16 w-16 rounded-full"
                     style={{
                       background: `conic-gradient(#52b788 ${reaction?.score ?? 0}%, #e6ece7 0)`
                     }}
@@ -699,9 +690,9 @@ export default function Home() {
             ) : null}
           </section>
 
-          <section className="rounded-lg border border-moss/10 bg-white p-5 shadow-soft xl:col-span-3 xl:col-start-1 xl:row-start-3">
+          <section className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-span-3 xl:col-start-1 xl:row-start-3">
             <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-              <h2 className="text-xl font-bold text-ink">5-day forecast</h2>
+              <h2 className="text-lg font-bold text-ink">5-day forecast</h2>
               <span className="text-sm text-ink/60">
                 {forecast
                   ? `${
@@ -748,16 +739,16 @@ export default function Home() {
         </div>
 
         <aside className="order-3 contents">
-          <section className="rounded-lg border border-moss/10 bg-white p-5 shadow-soft xl:col-start-3 xl:row-start-1">
+          <section className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-3 xl:row-start-1">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-ink">Trigger breakdown</h2>
+              <h2 className="text-lg font-bold text-ink">Trigger breakdown</h2>
               <Activity className="text-fern" size={21} />
             </div>
-            <div className="mt-4 rounded-md bg-mint/35 p-3">
+            <div className="mt-3 rounded-md bg-mint/35 p-3">
               <p className="text-sm font-semibold text-ink/60">Total pollen today</p>
-              <p className="mt-1 text-3xl font-black text-ink">{Math.round(totalPollen)} grains/m³</p>
+              <p className="mt-1 text-2xl font-black text-ink">{Math.round(totalPollen)} grains/m³</p>
             </div>
-            <div className="mt-5 space-y-5">
+            <div className="mt-4 space-y-4">
               {(Object.keys(allergyLabels) as AllergyKey[]).map((key) => {
                 const count = today?.pollenCounts[key] ?? 0;
                 const level = pollenLevel(count);
@@ -800,8 +791,8 @@ export default function Home() {
             ) : null}
           </section>
 
-          <section className="rounded-lg border border-moss/10 bg-white p-5 shadow-soft xl:col-start-3 xl:row-start-2">
-            <h2 className="text-xl font-bold text-ink">Today&apos;s symptoms</h2>
+          <section className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-3 xl:row-start-2">
+              <h2 className="text-lg font-bold text-ink">Today&apos;s symptoms</h2>
             <label className="mt-4 block">
               <div className="flex justify-between gap-3 text-sm font-semibold text-ink/70">
                 <span>Current symptoms</span>
