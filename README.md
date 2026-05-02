@@ -32,10 +32,17 @@ To test live data, enter a city or ZIP code, or use GPS when the browser asks fo
 
 ## API Notes
 
-The forecast route calls:
+The forecast route prefers:
 
-- Open-Meteo Air Quality API for pollen variables:
-  `alder_pollen`, `birch_pollen`, `grass_pollen`, `mugwort_pollen`, `olive_pollen`, `ragweed_pollen`
+- Google Pollen API for U.S. daily tree, grass, and weed pollen indexes
 - Open-Meteo Weather Forecast API for wind speed and precipitation context
+- Open-Meteo Air Quality API as a fallback for pollen variables:
+  `alder_pollen`, `birch_pollen`, `grass_pollen`, `mugwort_pollen`, `olive_pollen`, `ragweed_pollen`
+
+Create `.env.local` for Google Pollen:
+
+```env
+GOOGLE_POLLEN_API_KEY=your_key_here
+```
 
 Open-Meteo pollen coverage varies by region. If pollen data is missing, the app shows a clear fallback message and can use seeded demo data.

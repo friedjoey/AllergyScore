@@ -406,7 +406,15 @@ export default function Home() {
             <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
               <h2 className="text-xl font-bold text-ink">5-day forecast</h2>
               <span className="text-sm text-ink/60">
-                {forecast ? `${forecast.source === "demo" ? "Seeded demo" : "Open-Meteo"} data for ${forecast.location.label}` : "Waiting for location"}
+                {forecast
+                  ? `${
+                      forecast.source === "demo"
+                        ? "Seeded demo"
+                        : forecast.source === "google-pollen"
+                          ? "Google Pollen"
+                          : "Open-Meteo"
+                    } data for ${forecast.location.label}`
+                  : "Waiting for location"}
               </span>
             </div>
             <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">

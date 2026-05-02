@@ -66,6 +66,6 @@ export type ForecastPayload = {
   };
   days: DayForecast[];
   hasPollenData: boolean;
-  source: "open-meteo" | "demo";
+  source: "google-pollen" | "open-meteo" | "demo";
   message?: string;
 };

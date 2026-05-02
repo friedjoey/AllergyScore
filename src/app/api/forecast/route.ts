@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getMockForecast } from "@/lib/mockData";
+import { fetchGooglePollenForecast } from "@/lib/googlePollen";
 import { fetchOpenMeteoForecast } from "@/lib/openMeteo";
 
 export async function GET(request: Request) {
@@ -18,6 +19,21 @@ export async function GET(request: Request) {
   }
 
   try {
+    if (process.env.GOOGLE_POLLEN_API_KEY) {
+      try {
+        const googleForecast = await fetchGooglePollenForecast(
+          latitude,
+          longitude,
+          label,
+          process.env.GOOGLE_POLLEN_API_KEY
+        );
+
+        return NextResponse.json(googleForecast);
+      } catch {
+        // Keep the MVP usable if the Google key is not enabled yet or quota is unavailable.
+      }
+    }
+
     const forecast = await fetchOpenMeteoForecast(latitude, longitude, label);
     return NextResponse.json(forecast);
   } catch (error) {
