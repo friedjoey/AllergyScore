@@ -2,6 +2,8 @@ import type {
   AllergyKey,
   DayForecast,
   ForecastHour,
+  PollenCounts,
+  ReactionScore,
   Sensitivities,
   SeverityLevel,
   SeverityResult,
@@ -27,6 +29,7 @@ export function defaultProfile(): UserProfile {
     locationLabel: "",
     latitude: null,
     longitude: null,
+    mode: "known",
     allergies: {
       tree: true,
       grass: true,
@@ -147,6 +150,70 @@ function getLevel(score: number): SeverityLevel {
   return "Low";
 }
 
+function getDailyPollenCounts(day: DayForecast): PollenCounts {
+  const tree: number[] = [];
+  const grass: number[] = [];
+  const weed: number[] = [];
+  const mold: number[] = [];
+
+  day.hours.forEach((hour) => {
+    const groups = getPollenGroups(hour);
+
+    if (groups.tree !== null) tree.push(groups.tree);
+    if (groups.grass !== null) grass.push(groups.grass);
+    if (groups.weed !== null) weed.push(groups.weed);
+
+    const wind = hour.wind_speed_10m ?? 0;
+    const rain = hour.precipitation ?? 0;
+    mold.push(clamp(20 + rain * 18 + Math.max(0, wind - 15) * 1.5, 0, 120));
+  });
+
+  return {
+    tree: average(tree),
+    grass: average(grass),
+    weed: average(weed),
+    mold: average(mold)
+  };
+}
+
+function getReactionScore(
+  pollenCounts: PollenCounts,
+  allergies: Record<AllergyKey, boolean>,
+  sensitivities: Sensitivities,
+  mode: UserProfile["mode"]
+): ReactionScore {
+  const effectiveAllergies =
+    mode === "general"
+      ? { tree: true, grass: true, weed: true, mold: true }
+      : allergies;
+  const effectiveSensitivities =
+    mode === "general"
+      ? { tree: 3, grass: 3, weed: 3, mold: 3 }
+      : sensitivities;
+
+  const contributions = (Object.keys(pollenCounts) as AllergyKey[]).reduce(
+    (next, key) => {
+      next[key] = effectiveAllergies[key] ? pollenCounts[key] * effectiveSensitivities[key] : 0;
+      return next;
+    },
+    { tree: 0, grass: 0, weed: 0, mold: 0 } as Record<AllergyKey, number>
+  );
+
+  const total = Object.values(contributions).reduce((sum, value) => sum + value, 0);
+  const topEntry = (Object.entries(contributions) as Array<[AllergyKey, number]>).sort(
+    (a, b) => b[1] - a[1]
+  )[0];
+  const score = clamp((total / 5500) * 100);
+
+  return {
+    score,
+    level: getLevel(score),
+    topAllergen: topEntry[0],
+    topContributionPercent: total > 0 ? Math.round((topEntry[1] / total) * 100) : 0,
+    contributions
+  };
+}
+
 function getMainTrigger(breakdown: TriggerBreakdown, allergies: Record<AllergyKey, boolean>) {
   const active = (Object.entries(breakdown) as Array<[AllergyKey, number]>)
     .filter(([key]) => allergies[key])
@@ -168,6 +235,7 @@ function getMainTrigger(breakdown: TriggerBreakdown, allergies: Record<AllergyKe
 
 export function calculateDaySeverity(day: DayForecast, profile: UserProfile): SeverityResult {
   const triggerBreakdown = getDailyBreakdown(day);
+  const pollenCounts = getDailyPollenCounts(day);
   const hasPollenData = day.hours.some((hour) => {
     const groups = getPollenGroups(hour);
     return groups.tree !== null || groups.grass !== null || groups.weed !== null;
@@ -181,6 +249,12 @@ export function calculateDaySeverity(day: DayForecast, profile: UserProfile): Se
   const sensitivityRisk = getSensitivityRisk(profile.allergies, profile.sensitivities);
   const symptomRisk = profile.currentSymptoms * 10;
   const weatherModifier = getWeatherModifier(day);
+  const reactionScore = getReactionScore(
+    pollenCounts,
+    profile.allergies,
+    profile.sensitivities,
+    profile.mode
+  );
 
   // Weighted MVP score: pollen dominates, user sensitivity and current symptoms
   // personalize it, and weather nudges risk up or down for wind/rain.
@@ -209,6 +283,8 @@ export function calculateDaySeverity(day: DayForecast, profile: UserProfile): Se
     symptomRisk,
     weatherModifier,
     triggerBreakdown,
+    pollenCounts,
+    reactionScore,
     mainTrigger: getMainTrigger(triggerBreakdown, profile.allergies),
     hasPollenData
   };

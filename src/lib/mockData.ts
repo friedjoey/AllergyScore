@@ -21,12 +21,12 @@ export function getMockForecast(label = "Demo Meadow, CA"): ForecastPayload {
 
         return {
           time: `${date}T${String(hour).padStart(2, "0")}:00`,
-          alder_pollen: Math.round(18 * peak * daytime * wave),
-          birch_pollen: Math.round(34 * peak * daytime * wave),
-          olive_pollen: Math.round(12 * peak * daytime * wave),
-          grass_pollen: Math.round(42 * peak * daytime * wave),
-          mugwort_pollen: Math.round(10 * peak * daytime * wave),
-          ragweed_pollen: Math.round(26 * peak * daytime * wave),
+          alder_pollen: Math.round(120 * peak * daytime * wave),
+          birch_pollen: Math.round(560 * peak * daytime * wave),
+          olive_pollen: Math.round(90 * peak * daytime * wave),
+          grass_pollen: Math.round(145 * peak * daytime * wave),
+          mugwort_pollen: Math.round(6 * peak * daytime * wave),
+          ragweed_pollen: Math.round(18 * peak * daytime * wave),
           wind_speed_10m: 10 + dayIndex * 3 + (hour > 12 ? 8 : 2),
           precipitation: dayIndex === 2 && hour > 5 && hour < 11 ? 1.2 : 0
         };

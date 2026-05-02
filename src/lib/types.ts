@@ -4,10 +4,13 @@ export type SeverityLevel = "Low" | "Moderate" | "High" | "Severe";
 
 export type Sensitivities = Record<AllergyKey, number>;
 
+export type ProfileMode = "known" | "general";
+
 export type UserProfile = {
   locationLabel: string;
   latitude: number | null;
   longitude: number | null;
+  mode: ProfileMode;
   allergies: Record<AllergyKey, boolean>;
   sensitivities: Sensitivities;
   currentSymptoms: number;
@@ -45,6 +48,16 @@ export type TriggerBreakdown = {
   mold: number;
 };
 
+export type PollenCounts = Record<AllergyKey, number>;
+
+export type ReactionScore = {
+  score: number;
+  level: SeverityLevel;
+  topAllergen: AllergyKey;
+  topContributionPercent: number;
+  contributions: Record<AllergyKey, number>;
+};
+
 export type SeverityResult = {
   date: string;
   score: number;
@@ -54,6 +67,8 @@ export type SeverityResult = {
   symptomRisk: number;
   weatherModifier: number;
   triggerBreakdown: TriggerBreakdown;
+  pollenCounts: PollenCounts;
+  reactionScore: ReactionScore;
   mainTrigger: string;
   hasPollenData: boolean;
 };
