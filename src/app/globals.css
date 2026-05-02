@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  background: #f6faf4;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(217, 244, 223, 0.7), rgba(246, 250, 244, 0) 420px),
+    #f6faf4;
+  color: #1c2621;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+input[type="range"] {
+  accent-color: #4d8a62;
+}
+
+.focus-ring {
+  @apply focus:outline-none focus:ring-2 focus:ring-fern focus:ring-offset-2 focus:ring-offset-[#f6faf4];
+}
