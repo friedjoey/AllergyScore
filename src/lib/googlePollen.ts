@@ -42,10 +42,6 @@ function pollenIndex(day: GoogleDayInfo, code: GooglePollenType["code"]) {
   return typeof value === "number" ? value : 0;
 }
 
-function indexToCount(index: number, highCount: number) {
-  return Math.round(Math.pow(index / 5, 1.45) * highCount);
-}
-
 function getWeatherByDate(weather: WeatherResponse) {
   const map = new Map<string, Array<Pick<ForecastHour, "wind_speed_10m" | "precipitation">>>();
   const times = (weather.hourly?.time ?? []) as string[];
@@ -125,9 +121,9 @@ export async function fetchGooglePollenForecast(
 
   const days: DayForecast[] = dailyInfo.slice(0, 5).map((day) => {
     const date = dateToIso(day.date);
-    const treeCount = indexToCount(pollenIndex(day, "TREE"), 850);
-    const grassCount = indexToCount(pollenIndex(day, "GRASS"), 220);
-    const weedCount = indexToCount(pollenIndex(day, "WEED"), 80);
+    const treeIndex = pollenIndex(day, "TREE");
+    const grassIndex = pollenIndex(day, "GRASS");
+    const weedIndex = pollenIndex(day, "WEED");
     const weatherHours = weatherByDate.get(date) ?? [];
 
     const hours = Array.from({ length: 24 }, (_, hourIndex): ForecastHour => {
@@ -135,12 +131,12 @@ export async function fetchGooglePollenForecast(
 
       return {
         time: `${date}T${String(hourIndex).padStart(2, "0")}:00`,
-        alder_pollen: treeCount * 0.18,
-        birch_pollen: treeCount * 0.72,
-        olive_pollen: treeCount * 0.1,
-        grass_pollen: grassCount,
-        mugwort_pollen: weedCount * 0.22,
-        ragweed_pollen: weedCount * 0.78,
+        alder_pollen: 0,
+        birch_pollen: treeIndex,
+        olive_pollen: 0,
+        grass_pollen: grassIndex,
+        mugwort_pollen: 0,
+        ragweed_pollen: weedIndex,
         wind_speed_10m: weatherHour.wind_speed_10m ?? null,
         precipitation: weatherHour.precipitation ?? null
       };
@@ -153,6 +149,7 @@ export async function fetchGooglePollenForecast(
     location: { latitude, longitude, label },
     days,
     hasPollenData: true,
-    source: "google-pollen"
+    source: "google-pollen",
+    pollenUnit: "upi"
   };
 }

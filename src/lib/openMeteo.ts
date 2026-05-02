@@ -99,6 +99,7 @@ export async function fetchOpenMeteoForecast(
     days: groupByDay(hours),
     hasPollenData,
     source: "open-meteo",
+    pollenUnit: "grains_per_m3",
     message: hasPollenData
       ? undefined
       : "Live pollen coverage is unavailable for this location. AllergyScore is using weather context and your symptom profile."

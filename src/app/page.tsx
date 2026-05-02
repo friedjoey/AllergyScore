@@ -3,12 +3,10 @@
 import {
   Activity,
   AlertTriangle,
-  CheckCircle2,
   Cloud,
   Compass,
   Loader2,
   MapPin,
-  Pill,
   Search,
   Sprout,
   SunMedium,
@@ -26,25 +24,21 @@ import type {
   Sensitivities,
   SeverityLevel,
   SeverityResult,
-  SymptomLog,
   UserProfile
 } from "@/lib/types";
 
 const PROFILE_KEY = "allergycast-profile";
-const LOG_KEY = "allergycast-symptom-logs";
 
 const allergyLabels: Record<AllergyKey, string> = {
   tree: "Tree",
   grass: "Grass",
-  weed: "Weed/ragweed",
-  mold: "Mold"
+  weed: "Weed/ragweed"
 };
 
 const allergyColors: Record<AllergyKey, string> = {
   tree: "#2d6a4f",
   grass: "#52b788",
-  weed: "#f4a261",
-  mold: "#9b5de5"
+  weed: "#f4a261"
 };
 
 const levelStyles: Record<SeverityLevel, string> = {
@@ -66,10 +60,6 @@ type QuizState = {
   severity: "mild" | "moderate" | "severe";
 };
 
-function todayKey() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("en", {
     weekday: "short",
@@ -90,6 +80,22 @@ function pollenLevel(count: number) {
   if (count >= 151) return { label: "High", className: "bg-orange-100 text-orange-800 border-orange-200" };
   if (count >= 51) return { label: "Moderate", className: "bg-yellow-100 text-yellow-900 border-yellow-200" };
   return { label: "Low", className: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+}
+
+function upiLevel(index: number) {
+  if (index >= 5) return { label: "Very High", className: "bg-red-100 text-red-800 border-red-200" };
+  if (index >= 4) return { label: "High", className: "bg-orange-100 text-orange-800 border-orange-200" };
+  if (index >= 3) return { label: "Moderate", className: "bg-yellow-100 text-yellow-900 border-yellow-200" };
+  if (index >= 1) return { label: "Low", className: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+  return { label: "None", className: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+}
+
+function formatPollenValue(value: number, unit?: ForecastPayload["pollenUnit"]) {
+  if (unit === "upi") {
+    return `${value.toFixed(1)} UPI`;
+  }
+
+  return `${Math.round(value)} grains/m³`;
 }
 
 function trendArrow(day: SeverityResult, today?: SeverityResult) {
@@ -119,7 +125,7 @@ function normalizeProfile(saved: Partial<UserProfile>): UserProfile {
 }
 
 function estimateSensitivities(quiz: QuizState): Sensitivities {
-  const next: Sensitivities = { tree: 3, grass: 3, weed: 3, mold: 3 };
+  const next: Sensitivities = { tree: 3, grass: 3, weed: 3 };
 
   if (quiz.season === "spring") next.tree = 5;
   if (quiz.season === "summer") next.grass = 5;
@@ -128,7 +134,6 @@ function estimateSensitivities(quiz: QuizState): Sensitivities {
     next.tree = 4;
     next.grass = 4;
     next.weed = 4;
-    next.mold = 4;
   }
 
   if (quiz.outdoors === "yes") {
@@ -165,7 +170,6 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 export default function Home() {
   const [profile, setProfile] = useState<UserProfile>(defaultProfile);
-  const [logs, setLogs] = useState<SymptomLog[]>([]);
   const [query, setQuery] = useState("");
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [forecast, setForecast] = useState<ForecastPayload | null>(null);
@@ -181,14 +185,8 @@ export default function Home() {
 
   useEffect(() => {
     const savedProfile = window.localStorage.getItem(PROFILE_KEY);
-    const savedLogs = window.localStorage.getItem(LOG_KEY);
-
     if (savedProfile) {
       setProfile(normalizeProfile(JSON.parse(savedProfile) as Partial<UserProfile>));
-    }
-
-    if (savedLogs) {
-      setLogs(JSON.parse(savedLogs) as SymptomLog[]);
     }
   }, []);
 
@@ -196,18 +194,13 @@ export default function Home() {
     window.localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
   }, [profile]);
 
-  useEffect(() => {
-    window.localStorage.setItem(LOG_KEY, JSON.stringify(logs));
-  }, [logs]);
-
   const severity = useMemo<SeverityResult[]>(() => {
     if (!forecast) return [];
-    return calculateForecast(forecast.days, profile);
+    return calculateForecast(forecast.days, profile, forecast.pollenUnit);
   }, [forecast, profile]);
 
   const today = severity[0];
   const reaction = today?.reactionScore;
-  const loggedToday = logs.some((log) => log.date === todayKey());
   const totalPollen = today
     ? Object.values(today.pollenCounts).reduce((sum, value) => sum + value, 0)
     : 0;
@@ -371,11 +364,11 @@ export default function Home() {
       mode,
       allergies:
         mode === "general"
-          ? { tree: true, grass: true, weed: true, mold: true }
+          ? { tree: true, grass: true, weed: true }
           : current.allergies,
       sensitivities:
         mode === "general"
-          ? { tree: 3, grass: 3, weed: 3, mold: 3 }
+          ? { tree: 3, grass: 3, weed: 3 }
           : current.sensitivities
     }));
   }
@@ -384,22 +377,9 @@ export default function Home() {
     setProfile((current) => ({
       ...current,
       mode: "known",
-      allergies: { tree: true, grass: true, weed: true, mold: true },
+      allergies: { tree: true, grass: true, weed: true },
       sensitivities: estimateSensitivities(quiz)
     }));
-  }
-
-  function logSymptoms() {
-    if (loggedToday) return;
-
-    setLogs((current) => [
-      {
-        date: todayKey(),
-        score: profile.currentSymptoms,
-        notes: profile.medicationTaken ? "Medication taken" : undefined
-      },
-      ...current
-    ]);
   }
 
   return (
@@ -599,13 +579,14 @@ export default function Home() {
         </aside>
 
         <div className="order-2 contents">
-            <section className="flex min-h-[240px] flex-col justify-between rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-2 xl:row-start-1">
+            <section className="flex min-h-[420px] flex-col rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-2 xl:row-span-2 xl:row-start-1">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold uppercase text-fern">Today</p>
                   <h2 className="mt-1 text-2xl font-bold text-ink">
                     {today ? today.level : "No forecast yet"}
                   </h2>
+                  <p className="mt-1 text-sm text-ink/60">Environmental Risk</p>
                 </div>
                 <div
                   className={`grid h-24 w-24 shrink-0 place-items-center rounded-full border-8 sm:h-28 sm:w-28 ${
@@ -623,72 +604,53 @@ export default function Home() {
                 />
               </div>
 
-              <div className="mt-4 rounded-md bg-skywash p-3">
+              <div className="my-5 border-t border-moss/10" />
+
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase text-fern">Your Reaction Score</p>
+                  <p className="mt-1 text-sm text-ink/60">Based on your sensitivities</p>
+                  <h3 className="mt-3 text-4xl font-black text-ink">
+                    {reaction ? Math.round(reaction.score) : "--"}
+                  </h3>
+                  <span
+                    className={`mt-2 inline-flex rounded-full border px-3 py-1 text-sm font-bold ${
+                      reaction ? levelStyles[reaction.level] : "border-moss/10 bg-mint/50 text-moss"
+                    }`}
+                  >
+                    {reaction ? reaction.level : "Waiting"}
+                  </span>
+                </div>
+                <div className="h-24 w-24 rounded-full bg-moss/10 p-2">
+                  <div className="grid h-full w-full place-items-center rounded-full bg-white">
+                    <div
+                      className="h-16 w-16 rounded-full"
+                      style={{
+                        background: `conic-gradient(#52b788 ${reaction?.score ?? 0}%, #e6ece7 0)`
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-md bg-skywash p-3">
                 <div className="flex items-start gap-3">
                   <SunMedium className="mt-0.5 text-moss" size={20} />
                   <div>
                     <h3 className="font-bold text-ink">What should I do?</h3>
                     <p className="mt-1 text-sm leading-6 text-ink/75">
-                      {today ? recommendationByLevel[today.level] : "Add a location to get guidance."}
+                      {reaction ? recommendationByLevel[reaction.level] : "Add a location to get guidance."}
                     </p>
                   </div>
                 </div>
               </div>
 
-              {today ? (
-                <p className="mt-4 text-sm font-medium text-ink/70">{today.mainTrigger}.</p>
+              {reaction ? (
+                <p className="mt-4 text-sm font-medium text-ink/70">
+                  {allergyLabels[reaction.topAllergen]} pollen is your biggest trigger today ({reaction.topContributionPercent}% of reaction score).
+                </p>
               ) : null}
             </section>
-
-          <section className="flex min-h-[210px] flex-col justify-between rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-2 xl:row-start-2">
-            <p className="text-sm font-semibold uppercase text-fern">
-              {profile.mode === "general"
-                ? "Average risk for allergy sufferers in your area"
-                : "Your Reaction Score"}
-            </p>
-            <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <h2 className="text-4xl font-black text-ink">
-                  {reaction ? Math.round(reaction.score) : "--"}
-                </h2>
-                <span
-                  className={`mt-2 inline-flex rounded-full border px-3 py-1 text-sm font-bold ${
-                    reaction ? levelStyles[reaction.level] : "border-moss/10 bg-mint/50 text-moss"
-                  }`}
-                >
-                  {reaction ? reaction.level : "Waiting"}
-                </span>
-              </div>
-              <div className="h-24 w-24 rounded-full bg-moss/10 p-2">
-                <div className="grid h-full w-full place-items-center rounded-full bg-white">
-                  <div
-                    className="h-16 w-16 rounded-full"
-                    style={{
-                      background: `conic-gradient(#52b788 ${reaction?.score ?? 0}%, #e6ece7 0)`
-                    }}
-                  />
-                </div>
-              </div>
-            </div>
-            <p className="mt-4 text-sm leading-6 text-ink/70">
-              {reaction
-                ? `${allergyLabels[reaction.topAllergen]} is responsible for ${reaction.topContributionPercent}% of your score today.`
-                : "Add a location to calculate your reaction score."}
-            </p>
-            {profile.mode === "general" ? (
-              <div className="mt-4 rounded-md border border-moss/10 bg-mint/35 p-3">
-                <p className="text-sm font-semibold text-ink">Get a more accurate score</p>
-                <p className="mt-1 text-sm text-ink/65">Set your sensitivities to personalize this number.</p>
-                <button
-                  className="focus-ring mt-3 rounded-md bg-moss px-3 py-2 text-sm font-semibold text-white hover:bg-ink"
-                  onClick={() => setProfileMode("known")}
-                  type="button"
-                >
-                  Set sensitivities
-                </button>
-              </div>
-            ) : null}
-          </section>
 
           <section className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-span-3 xl:col-start-1 xl:row-start-3">
             <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
@@ -746,13 +708,21 @@ export default function Home() {
             </div>
             <div className="mt-3 rounded-md bg-mint/35 p-3">
               <p className="text-sm font-semibold text-ink/60">Total pollen today</p>
-              <p className="mt-1 text-2xl font-black text-ink">{Math.round(totalPollen)} grains/m³</p>
+              <p className="mt-1 text-2xl font-black text-ink">
+                {formatPollenValue(totalPollen, forecast?.pollenUnit)}
+              </p>
+              {forecast?.pollenUnit === "upi" ? (
+                <p className="mt-1 text-xs text-ink/55">
+                  UPI means Universal Pollen Index, a 0-5 scale for pollen intensity.
+                </p>
+              ) : null}
             </div>
             <div className="mt-4 space-y-4">
               {(Object.keys(allergyLabels) as AllergyKey[]).map((key) => {
                 const count = today?.pollenCounts[key] ?? 0;
-                const level = pollenLevel(count);
-                const width = Math.min(100, (count / 500) * 100);
+                const isUpi = forecast?.pollenUnit === "upi";
+                const level = isUpi ? upiLevel(count) : pollenLevel(count);
+                const width = Math.min(100, (count / (isUpi ? 5 : 500)) * 100);
 
                 return (
                   <div key={key}>
@@ -765,7 +735,7 @@ export default function Home() {
                         <span className="font-semibold text-ink">{allergyLabels[key]}</span>
                       </div>
                       <span className="text-right text-sm font-bold text-ink">
-                        {Math.round(count)} grains/m³
+                        {formatPollenValue(count, forecast?.pollenUnit)}
                       </span>
                     </div>
                     <div className="h-3 overflow-hidden rounded-full bg-moss/10">
@@ -789,73 +759,6 @@ export default function Home() {
                 <span>{forecast.message}</span>
               </div>
             ) : null}
-          </section>
-
-          <section className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-3 xl:row-start-2">
-              <h2 className="text-lg font-bold text-ink">Today&apos;s symptoms</h2>
-            <label className="mt-4 block">
-              <div className="flex justify-between gap-3 text-sm font-semibold text-ink/70">
-                <span>Current symptoms</span>
-                <span>{profile.currentSymptoms}/10</span>
-              </div>
-              <input
-                className="mt-3 w-full"
-                max={10}
-                min={0}
-                onChange={(event) =>
-                  setProfile((current) => ({
-                    ...current,
-                    currentSymptoms: Number(event.target.value)
-                  }))
-                }
-                type="range"
-                value={profile.currentSymptoms}
-              />
-            </label>
-
-            <div className="mt-4 grid gap-3">
-              <label className="flex items-center justify-between gap-3 rounded-md border border-moss/10 p-3 font-medium">
-                <span className="flex min-w-0 items-center gap-2">
-                  <Pill className="shrink-0" size={17} />
-                  <span>Medication taken</span>
-                </span>
-                <input
-                  checked={profile.medicationTaken}
-                  onChange={(event) =>
-                    setProfile((current) => ({
-                      ...current,
-                      medicationTaken: event.target.checked
-                    }))
-                  }
-                  type="checkbox"
-                />
-              </label>
-              <label className="flex items-center justify-between gap-3 rounded-md border border-moss/10 p-3 font-medium">
-                <span>Outdoor exposure planned</span>
-                <input
-                  checked={profile.outdoorExposure}
-                  onChange={(event) =>
-                    setProfile((current) => ({
-                      ...current,
-                      outdoorExposure: event.target.checked
-                    }))
-                  }
-                  type="checkbox"
-                />
-              </label>
-            </div>
-
-            <button
-              className={`focus-ring mt-4 flex w-full items-center justify-center gap-2 rounded-md px-4 py-3 font-semibold text-white transition ${
-                loggedToday ? "bg-emerald-600" : "bg-moss hover:bg-ink"
-              }`}
-              disabled={loggedToday}
-              onClick={logSymptoms}
-              type="button"
-            >
-              <CheckCircle2 size={18} />
-              {loggedToday ? "Logged today" : "Log symptoms"}
-            </button>
           </section>
 
           {error ? (

@@ -42,6 +42,7 @@ export function getMockForecast(label = "Demo Meadow, CA"): ForecastPayload {
     },
     days,
     hasPollenData: true,
-    source: "demo"
+    source: "demo",
+    pollenUnit: "grains_per_m3"
   };
 }

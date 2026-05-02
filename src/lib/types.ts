@@ -1,4 +1,4 @@
-export type AllergyKey = "tree" | "grass" | "weed" | "mold";
+export type AllergyKey = "tree" | "grass" | "weed";
 
 export type SeverityLevel = "Low" | "Moderate" | "High" | "Severe";
 
@@ -45,7 +45,6 @@ export type TriggerBreakdown = {
   tree: number;
   grass: number;
   weed: number;
-  mold: number;
 };
 
 export type PollenCounts = Record<AllergyKey, number>;
@@ -82,5 +81,6 @@ export type ForecastPayload = {
   days: DayForecast[];
   hasPollenData: boolean;
   source: "google-pollen" | "open-meteo" | "demo";
+  pollenUnit: "upi" | "grains_per_m3";
   message?: string;
 };
