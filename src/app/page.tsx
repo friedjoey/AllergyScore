@@ -45,6 +45,12 @@ const levelStyles: Record<SeverityLevel, string> = {
   Severe: "bg-red-100 text-red-900 border-red-200"
 };
 
+type LocationOption = {
+  latitude: number;
+  longitude: number;
+  label: string;
+};
+
 function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -79,8 +85,10 @@ export default function Home() {
   const [profile, setProfile] = useState<UserProfile>(defaultProfile);
   const [logs, setLogs] = useState<SymptomLog[]>([]);
   const [query, setQuery] = useState("");
+  const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [forecast, setForecast] = useState<ForecastPayload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [suggesting, setSuggesting] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
 
@@ -115,6 +123,45 @@ export default function Home() {
 
   const today = severity[0];
   const loggedToday = logs.some((log) => log.date === todayKey());
+
+  useEffect(() => {
+    if (query.trim().length < 2) {
+      setLocationOptions([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      setSuggesting(true);
+
+      try {
+        const response = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal
+        });
+
+        if (!response.ok) {
+          setLocationOptions([]);
+          return;
+        }
+
+        const payload = (await response.json()) as LocationOption & { results?: LocationOption[] };
+        setLocationOptions(payload.results ?? [payload]);
+      } catch (locationError) {
+        if (locationError instanceof DOMException && locationError.name === "AbortError") {
+          return;
+        }
+
+        setLocationOptions([]);
+      } finally {
+        setSuggesting(false);
+      }
+    }, 300);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [query]);
 
   async function loadForecast(nextProfile: UserProfile, demo = false) {
     setLoading(true);
@@ -158,23 +205,29 @@ export default function Home() {
     setError("");
 
     try {
-      const location = await fetchJson<{ latitude: number; longitude: number; label: string }>(
+      const location = await fetchJson<LocationOption>(
         `/api/geocode?q=${encodeURIComponent(query)}`
       );
-      const nextProfile = {
-        ...profile,
-        latitude: location.latitude,
-        longitude: location.longitude,
-        locationLabel: location.label
-      };
-
-      setProfile(nextProfile);
-      await loadForecast(nextProfile);
+      await selectLocation(location);
     } catch (locationError) {
       setError(locationError instanceof Error ? locationError.message : "Could not find that location.");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function selectLocation(location: LocationOption) {
+    const nextProfile = {
+      ...profile,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      locationLabel: location.label
+    };
+
+    setQuery(location.label);
+    setLocationOptions([]);
+    setProfile(nextProfile);
+    await loadForecast(nextProfile);
   }
 
   function useGps() {
@@ -331,9 +384,19 @@ export default function Home() {
                 })}
               </div>
               {forecast && !forecast.hasPollenData ? (
-                <div className="mt-5 flex gap-3 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">
+                <div className="mt-5 flex flex-col gap-3 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">
+                  <div className="flex gap-3">
                   <AlertTriangle className="mt-0.5 shrink-0" size={18} />
                   <span>{forecast.message}</span>
+                  </div>
+                  <button
+                    className="focus-ring inline-flex w-fit items-center gap-2 rounded-md bg-yellow-900 px-3 py-2 text-sm font-semibold text-white transition hover:bg-ink"
+                    onClick={() => loadForecast(profile, true)}
+                    type="button"
+                  >
+                    <Radar size={15} />
+                    Show demo pollen data
+                  </button>
                 </div>
               ) : null}
             </section>
@@ -376,13 +439,36 @@ export default function Home() {
             <form className="mt-4 space-y-4" onSubmit={submitLocation}>
               <label className="block">
                 <span className="text-sm font-semibold text-ink/70">Location</span>
-                <div className="mt-2 flex gap-2">
-                  <input
-                    className="focus-ring min-w-0 flex-1 rounded-md border border-moss/20 px-3 py-3"
-                    onChange={(event) => setQuery(event.target.value)}
-                    placeholder="City or ZIP"
-                    value={query}
-                  />
+                <div className="relative mt-2 flex gap-2">
+                  <div className="relative min-w-0 flex-1">
+                    <input
+                      className="focus-ring w-full rounded-md border border-moss/20 px-3 py-3"
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="City or ZIP"
+                      value={query}
+                    />
+                    {query.trim().length >= 2 && (locationOptions.length > 0 || suggesting) ? (
+                      <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 overflow-hidden rounded-md border border-moss/15 bg-white shadow-soft">
+                        {suggesting ? (
+                          <div className="flex items-center gap-2 px-3 py-3 text-sm text-ink/60">
+                            <Loader2 className="animate-spin" size={15} />
+                            Searching locations
+                          </div>
+                        ) : null}
+                        {locationOptions.map((option) => (
+                          <button
+                            className="flex w-full items-start gap-2 px-3 py-3 text-left text-sm transition hover:bg-mint/60 focus:bg-mint/60 focus:outline-none"
+                            key={`${option.latitude}-${option.longitude}-${option.label}`}
+                            onClick={() => selectLocation(option)}
+                            type="button"
+                          >
+                            <MapPin className="mt-0.5 shrink-0 text-fern" size={15} />
+                            <span className="font-medium text-ink">{option.label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                   <button
                     className="focus-ring grid h-12 w-12 place-items-center rounded-md bg-fern text-white transition hover:bg-moss"
                     type="submit"

@@ -101,6 +101,6 @@ export async function fetchOpenMeteoForecast(
     source: "open-meteo",
     message: hasPollenData
       ? undefined
-      : "Pollen data is unavailable for this location. AllergyCast is using weather context and your symptom profile."
+      : "Live pollen coverage is unavailable for this location. AllergyCast is using weather context and your symptom profile."
   };
 }

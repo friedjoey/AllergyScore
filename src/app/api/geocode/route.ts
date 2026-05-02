@@ -34,7 +34,8 @@ export async function GET(request: Request) {
   }
 
   const data = (await response.json()) as { results?: GeocodeResult[] };
-  const result = data.results?.[0];
+  const results = data.results ?? [];
+  const result = results[0];
 
   if (!result) {
     return NextResponse.json({ error: "No matching location found." }, { status: 404 });
@@ -45,6 +46,11 @@ export async function GET(request: Request) {
   return NextResponse.json({
     latitude: result.latitude,
     longitude: result.longitude,
-    label
+    label,
+    results: results.map((item) => ({
+      latitude: item.latitude,
+      longitude: item.longitude,
+      label: [item.name, item.admin1, item.country_code].filter(Boolean).join(", ")
+    }))
   });
 }
