@@ -1095,27 +1095,16 @@ export default function Home() {
 
               {reaction ? (
                 <div className="mt-4 rounded-md border border-moss/10 bg-[#fbfdf9] p-3">
-                  <p className="text-sm font-bold text-ink">Why this score?</p>
-                  <div className="mt-3 space-y-2">
-                    {(Object.keys(allergyLabels) as AllergyKey[]).map((key) => {
-                      const contribution = reaction.contributions[key] ?? 0;
-                      const percent = Object.values(reaction.contributions).reduce((sum, value) => sum + value, 0) > 0
-                        ? Math.round((contribution / Object.values(reaction.contributions).reduce((sum, value) => sum + value, 0)) * 100)
-                        : 0;
-
-                      return (
-                        <div key={key} className="flex items-center justify-between gap-3 text-sm">
-                          <span className="flex items-center gap-2 text-ink/70">
-                            <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: allergyColors[key] }} />
-                            {allergyLabels[key]}
-                          </span>
-                          <span className="font-semibold text-ink">
-                            {formatPollenValue(today?.pollenCounts[key] ?? 0, forecast?.pollenUnit)} x sensitivity {profile.mode === "general" ? 3 : profile.sensitivities[key]} = {percent}%
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <p className="text-sm font-bold text-ink">Personal Risk Factors</p>
+                  <p className="mt-2 text-sm leading-6 text-ink/70">
+                    Your reaction score is mainly based on {allergyLabels[reaction.topAllergen].toLowerCase()} pollen today.
+                    AllergyScore compares the local pollen index with your saved sensitivity settings, then adjusts the guidance for your profile.
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-ink/70">
+                    {profile.asthmaRisk
+                      ? "Because asthma risk is turned on, the app uses more cautious severity guidance."
+                      : "Asthma risk is not turned on, so the app is using standard severity guidance."}
+                  </p>
                 </div>
               ) : null}
             </section>
