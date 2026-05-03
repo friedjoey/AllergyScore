@@ -158,11 +158,23 @@ function getEnvironmentalPollenScore(totalPollen: number) {
 }
 
 function getEnvironmentalUpiScore(pollenCounts: PollenCounts) {
-  return clamp(
-    pollenCounts.tree * 10 +
-      pollenCounts.grass * 10 +
-      pollenCounts.weed * 10
+  const rawScores = (Object.keys(pollenCounts) as AllergyKey[]).reduce(
+    (next, key) => {
+      const normalizedUpi = clamp(pollenCounts[key], 0, 5) / 5;
+      next[key] = Math.pow(normalizedUpi, 1.25) * (1 + normalizedUpi * 0.3);
+      return next;
+    },
+    { tree: 0, grass: 0, weed: 0 } as Record<AllergyKey, number>
   );
+  const dominant = (Object.entries(rawScores) as Array<[AllergyKey, number]>).sort(
+    (a, b) => b[1] - a[1]
+  )[0][0];
+  const composite = (Object.keys(rawScores) as AllergyKey[]).reduce((sum, key) => {
+    const weight = key === dominant ? 0.6 : 0.2;
+    return sum + rawScores[key] * weight;
+  }, 0);
+
+  return clamp(composite * 105);
 }
 
 function getDailyPollenCounts(day: DayForecast): PollenCounts {
@@ -209,7 +221,7 @@ function getReactionScore(
     (next, key) => {
       next[key] =
         activeKeys.includes(key)
-          ? pollenCounts[key] * 3 * effectiveSensitivities[key]
+          ? pollenCounts[key] * 3.8 * effectiveSensitivities[key]
           : 0;
       return next;
     },
@@ -223,7 +235,7 @@ function getReactionScore(
   const topEntry = (Object.entries(contributions) as Array<[AllergyKey, number]>).sort(
     (a, b) => b[1] - a[1]
   )[0];
-  const score = clamp(total);
+  const score = clamp(total * 1.08);
 
   return {
     score,
