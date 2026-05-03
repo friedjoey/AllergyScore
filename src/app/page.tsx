@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   Cloud,
   Compass,
+  Trash2,
   FileText,
   Loader2,
   MapPin,
@@ -623,6 +624,36 @@ export default function Home() {
     void loadForecast(nextProfile);
   }
 
+  function selectSavedProfile(profileId: string) {
+    const savedProfile = savedProfiles.find((item) => item.id === profileId);
+    if (!savedProfile) return;
+
+    switchSavedProfile(savedProfile);
+  }
+
+  function removeActiveProfile() {
+    if (!activeProfileId) return;
+
+    const remainingProfiles = savedProfiles.filter((item) => item.id !== activeProfileId);
+    setSavedProfiles(remainingProfiles);
+
+    const nextProfile = remainingProfiles[0];
+    if (nextProfile) {
+      switchSavedProfile(nextProfile);
+      return;
+    }
+
+    const freshProfile = defaultProfile();
+    setActiveProfileId("");
+    setProfileName("My profile");
+    setProfile(freshProfile);
+    setLogs([]);
+    setSymptomNotes("");
+    setQuery(freshProfile.locationLabel);
+    window.localStorage.removeItem(ACTIVE_PROFILE_KEY);
+    void loadForecast(freshProfile);
+  }
+
   function startNewProfile() {
     const nextName = profileName.trim() || "New profile";
     const nextProfile = defaultProfile();
@@ -947,24 +978,30 @@ export default function Home() {
               </button>
             </div>
             {savedProfiles.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                <p className="text-xs font-semibold uppercase text-ink/50">Switch profiles</p>
-                {savedProfiles.map((savedProfile) => (
+              <label className="mt-3 block">
+                <span className="text-xs font-semibold uppercase text-ink/50">Switch profiles</span>
+                <div className="mt-2 flex gap-2">
+                  <select
+                    className="focus-ring min-w-0 flex-1 rounded-md border border-moss/20 bg-white px-3 py-2.5 text-sm font-semibold text-ink"
+                    onChange={(event) => selectSavedProfile(event.target.value)}
+                    value={activeProfileId}
+                  >
+                    {savedProfiles.map((savedProfile) => (
+                      <option key={savedProfile.id} value={savedProfile.id}>
+                        {savedProfile.name} ({savedProfile.logs.length} logs)
+                      </option>
+                    ))}
+                  </select>
                   <button
-                    className={`focus-ring flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition ${
-                      activeProfileId === savedProfile.id
-                        ? "border-fern bg-mint/50 text-moss"
-                        : "border-moss/10 bg-[#fbfdf9] text-ink hover:bg-mint/35"
-                    }`}
-                    key={savedProfile.id}
-                    onClick={() => switchSavedProfile(savedProfile)}
+                    aria-label="Remove selected profile"
+                    className="focus-ring grid h-11 w-11 shrink-0 place-items-center rounded-md border border-red-200 text-red-700 transition hover:bg-red-50"
+                    onClick={removeActiveProfile}
                     type="button"
                   >
-                    <span className="font-semibold">{savedProfile.name}</span>
-                    <span className="text-xs text-ink/50">{savedProfile.logs.length} logs</span>
+                    <Trash2 size={17} />
                   </button>
-                ))}
-              </div>
+                </div>
+              </label>
             ) : (
               <p className="mt-3 rounded-md bg-mint/35 p-3 text-sm text-ink/65">
                 Name this setup, then save it so you can switch back later.
