@@ -42,7 +42,7 @@ If no Google API key is available, the app still works through **Demo mode**, wh
 
 Frontend: React, Next.js, TypeScript, TailwindCSS
 
-Backend: Next.js API routes
+Backend: Next.js API routes, Python
 
 Data: Google Pollen API, Open-Meteo Weather API, Open-Meteo Geocoding API, localStorage
 
