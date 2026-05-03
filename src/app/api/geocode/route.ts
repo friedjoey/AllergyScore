@@ -10,13 +10,36 @@ type GeocodeResult = {
   postcodes?: string[];
 };
 
+const fallbackLocations = [
+  { label: "Wilsonville, Oregon, US", latitude: 45.2998, longitude: -122.7737 },
+  { label: "Corvallis, Oregon, US", latitude: 44.5646, longitude: -123.262 },
+  { label: "Portland, Oregon, US", latitude: 45.5152, longitude: -122.6784 },
+  { label: "Eugene, Oregon, US", latitude: 44.0521, longitude: -123.0868 },
+  { label: "Salem, Oregon, US", latitude: 44.9429, longitude: -123.0351 },
+  { label: "Seattle, Washington, US", latitude: 47.6062, longitude: -122.3321 },
+  { label: "San Francisco, California, US", latitude: 37.7749, longitude: -122.4194 },
+  { label: "Los Angeles, California, US", latitude: 34.0522, longitude: -118.2437 },
+  { label: "New York, New York, US", latitude: 40.7128, longitude: -74.006 },
+  { label: "Austin, Texas, US", latitude: 30.2672, longitude: -97.7431 },
+  { label: "Chicago, Illinois, US", latitude: 41.8781, longitude: -87.6298 }
+];
+
+function fallbackSearch(query: string) {
+  const normalizedQuery = query.toLowerCase();
+  return fallbackLocations.filter((location) =>
+    location.label.toLowerCase().includes(normalizedQuery)
+  );
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const query = searchParams.get("q")?.trim();
-  const latitude = Number(searchParams.get("lat"));
-  const longitude = Number(searchParams.get("lon"));
+  const latitudeParam = searchParams.get("lat");
+  const longitudeParam = searchParams.get("lon");
+  const latitude = latitudeParam === null ? NaN : Number(latitudeParam);
+  const longitude = longitudeParam === null ? NaN : Number(longitudeParam);
 
-  if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+  if (latitudeParam !== null && longitudeParam !== null && Number.isFinite(latitude) && Number.isFinite(longitude)) {
     const params = new URLSearchParams({
       latitude: String(latitude),
       longitude: String(longitude),
@@ -59,16 +82,35 @@ export async function GET(request: Request) {
     format: "json"
   });
 
-  const response = await fetch(`https://geocoding-api.open-meteo.com/v1/search?${params}`, {
-    next: { revalidate: 86400 }
-  });
+  let results: GeocodeResult[] = [];
 
-  if (!response.ok) {
-    return NextResponse.json({ error: "Could not geocode that location." }, { status: 502 });
+  try {
+    const response = await fetch(`https://geocoding-api.open-meteo.com/v1/search?${params}`, {
+      next: { revalidate: 86400 }
+    });
+
+    if (response.ok) {
+      const data = (await response.json()) as { results?: GeocodeResult[] };
+      results = data.results ?? [];
+    }
+  } catch {
+    results = [];
   }
 
-  const data = (await response.json()) as { results?: GeocodeResult[] };
-  const results = data.results ?? [];
+  if (results.length === 0) {
+    const fallbackResults = fallbackSearch(query);
+    if (fallbackResults.length > 0) {
+      const result = fallbackResults[0];
+
+      return NextResponse.json({
+        latitude: result.latitude,
+        longitude: result.longitude,
+        label: result.label,
+        results: fallbackResults
+      });
+    }
+  }
+
   const result = results[0];
 
   if (!result) {

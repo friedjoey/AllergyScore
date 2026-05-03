@@ -247,6 +247,7 @@ export default function Home() {
   const [activeProfileId, setActiveProfileId] = useState("");
   const [query, setQuery] = useState("");
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
+  const [locationMenuOpen, setLocationMenuOpen] = useState(false);
   const [forecast, setForecast] = useState<ForecastPayload | null>(null);
   const [loading, setLoading] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
@@ -461,6 +462,7 @@ export default function Home() {
 
     setQuery(location.label);
     setLocationOptions([]);
+    setLocationMenuOpen(false);
     setProfile(nextProfile);
     await loadForecast(nextProfile);
   }
@@ -793,11 +795,18 @@ export default function Home() {
                   <div className="relative min-w-0 flex-1">
                     <input
                       className="focus-ring w-full rounded-md border border-moss/20 px-2.5 py-2"
-                      onChange={(event) => setQuery(event.target.value)}
+                      onBlur={() => {
+                        window.setTimeout(() => setLocationMenuOpen(false), 150);
+                      }}
+                      onChange={(event) => {
+                        setQuery(event.target.value);
+                        setLocationMenuOpen(true);
+                      }}
+                      onFocus={() => setLocationMenuOpen(true)}
                       placeholder="City or ZIP"
                       value={query}
                     />
-                    {query.trim().length >= 2 && (locationOptions.length > 0 || suggesting) ? (
+                    {locationMenuOpen && query.trim().length >= 2 ? (
                       <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 overflow-hidden rounded-md border border-moss/15 bg-white shadow-soft">
                         {suggesting ? (
                           <div className="flex items-center gap-2 px-3 py-2 text-sm text-ink/60">
@@ -805,17 +814,26 @@ export default function Home() {
                             Searching locations
                           </div>
                         ) : null}
-                        {locationOptions.map((option) => (
-                          <button
-                            className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition hover:bg-mint/60 focus:bg-mint/60 focus:outline-none"
-                            key={`${option.latitude}-${option.longitude}-${option.label}`}
-                            onClick={() => selectLocation(option)}
-                            type="button"
-                          >
-                            <MapPin className="mt-0.5 shrink-0 text-fern" size={15} />
-                            <span className="font-medium text-ink">{option.label}</span>
-                          </button>
-                        ))}
+                        {!suggesting && locationOptions.length === 0 ? (
+                          <div className="px-3 py-2 text-sm text-ink/60">
+                            No matching locations yet. Keep typing or press search.
+                          </div>
+                        ) : null}
+                        {locationOptions.length > 0 ? (
+                          <div className="max-h-52 overflow-y-auto">
+                            {locationOptions.map((option) => (
+                              <button
+                                className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition hover:bg-mint/60 focus:bg-mint/60 focus:outline-none"
+                                key={`${option.latitude}-${option.longitude}-${option.label}`}
+                                onClick={() => selectLocation(option)}
+                                type="button"
+                              >
+                                <MapPin className="mt-0.5 shrink-0 text-fern" size={15} />
+                                <span className="font-medium text-ink">{option.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
