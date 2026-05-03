@@ -100,7 +100,7 @@ function formatPollenValue(value: number, unit?: ForecastPayload["pollenUnit"]) 
 
 function trendArrow(day: SeverityResult, today?: SeverityResult) {
   if (!today) return "→";
-  const delta = day.score - today.score;
+  const delta = day.reactionScore.score - today.reactionScore.score;
   if (delta > 3) return "↑";
   if (delta < -3) return "↓";
   return "→";
@@ -177,6 +177,7 @@ export default function Home() {
   const [suggesting, setSuggesting] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
+  const [loadedInitialForecast, setLoadedInitialForecast] = useState(false);
   const [quiz, setQuiz] = useState<QuizState>({
     season: "spring",
     outdoors: "sometimes",
@@ -204,6 +205,15 @@ export default function Home() {
   const totalPollen = today
     ? Object.values(today.pollenCounts).reduce((sum, value) => sum + value, 0)
     : 0;
+
+  useEffect(() => {
+    if (loadedInitialForecast || forecast || profile.latitude === null || profile.longitude === null) {
+      return;
+    }
+
+    setLoadedInitialForecast(true);
+    void loadForecast(profile);
+  }, [forecast, loadedInitialForecast, profile]);
 
   useEffect(() => {
     if (query.trim().length < 2) {
@@ -654,7 +664,7 @@ export default function Home() {
 
           <section className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-span-3 xl:col-start-1 xl:row-start-3">
             <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-              <h2 className="text-lg font-bold text-ink">5-day forecast</h2>
+              <h2 className="text-lg font-bold text-ink">Your 5-day reaction forecast</h2>
               <span className="text-sm text-ink/60">
                 {forecast
                   ? `${
@@ -679,16 +689,19 @@ export default function Home() {
                           <ConditionIcon className="text-fern" size={18} />
                         </div>
                         <div className="mt-3 flex items-center justify-between">
-                          <span className={`rounded-full border px-3 py-1 text-sm font-bold ${levelStyles[day.level]}`}>
-                            {day.level}
+                          <span className={`rounded-full border px-3 py-1 text-sm font-bold ${levelStyles[day.reactionScore.level]}`}>
+                            {day.reactionScore.level}
                           </span>
                           <span className="flex items-center gap-2 text-2xl font-black text-ink">
                             <span className="text-lg text-ink/50">{trendArrow(day, today)}</span>
-                            {Math.round(day.score)}
+                            {Math.round(day.reactionScore.score)}
                           </span>
                         </div>
                         <div className="mt-4 h-2 overflow-hidden rounded-full bg-moss/10">
-                          <div className={`h-full ${scoreColor(day.score)}`} style={{ width: `${day.score}%` }} />
+                          <div
+                            className={`h-full ${scoreColor(day.reactionScore.score)}`}
+                            style={{ width: `${day.reactionScore.score}%` }}
+                          />
                         </div>
                       </article>
                     );

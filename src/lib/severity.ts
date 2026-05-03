@@ -26,9 +26,9 @@ export const recommendationByLevel: Record<SeverityLevel, string> = {
 
 export function defaultProfile(): UserProfile {
   return {
-    locationLabel: "",
-    latitude: null,
-    longitude: null,
+    locationLabel: "Wilsonville, Oregon, US",
+    latitude: 45.2998,
+    longitude: -122.7737,
     mode: "known",
     allergies: {
       tree: true,
