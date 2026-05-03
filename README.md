@@ -36,4 +36,6 @@ Create `.env.local` for Google Pollen:
 GOOGLE_POLLEN_API_KEY=your_key_here
 ```
 
+If `GOOGLE_POLLEN_API_KEY` is not set, the app automatically uses demo data for Corvallis, Oregon so the dashboard still works for reviewers and teammates.
+
 Open-Meteo pollen coverage varies by region. If pollen data is missing, the app shows a clear fallback message and uses weather context.

@@ -15,6 +15,12 @@ export async function GET(request: Request) {
   }
 
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    if (!process.env.GOOGLE_POLLEN_API_KEY) {
+      return NextResponse.json(
+        getMockForecast("Corvallis, Oregon, US")
+      );
+    }
+
     return NextResponse.json({ error: "Latitude and longitude are required." }, { status: 400 });
   }
 
@@ -32,6 +38,8 @@ export async function GET(request: Request) {
       } catch {
         // Keep the MVP usable if the Google key is not enabled yet or quota is unavailable.
       }
+    } else {
+      return NextResponse.json(getMockForecast("Corvallis, Oregon, US"));
     }
 
     const forecast = await fetchOpenMeteoForecast(latitude, longitude, label);

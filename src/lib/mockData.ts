@@ -8,10 +8,10 @@ function isoDate(offset: number) {
   return date.toISOString().slice(0, 10);
 }
 
-export function getMockForecast(label = "Demo Meadow, CA"): ForecastPayload {
+export function getMockForecast(label = "Corvallis, Oregon, US"): ForecastPayload {
   const days = Array.from({ length: 5 }, (_, dayIndex) => {
     const date = isoDate(dayIndex);
-    const peak = dayIndex === 1 ? 1.35 : dayIndex === 3 ? 0.7 : 1;
+    const peak = dayIndex === 1 ? 1.18 : dayIndex === 3 ? 0.72 : 1;
 
     return {
       date,
@@ -21,12 +21,12 @@ export function getMockForecast(label = "Demo Meadow, CA"): ForecastPayload {
 
         return {
           time: `${date}T${String(hour).padStart(2, "0")}:00`,
-          alder_pollen: Math.round(120 * peak * daytime * wave),
-          birch_pollen: Math.round(560 * peak * daytime * wave),
-          olive_pollen: Math.round(90 * peak * daytime * wave),
-          grass_pollen: Math.round(145 * peak * daytime * wave),
-          mugwort_pollen: Math.round(6 * peak * daytime * wave),
-          ragweed_pollen: Math.round(18 * peak * daytime * wave),
+          alder_pollen: 0,
+          birch_pollen: Math.min(5, 3.4 * peak * daytime * wave),
+          olive_pollen: 0,
+          grass_pollen: Math.min(5, 1.8 * peak * daytime * wave),
+          mugwort_pollen: 0,
+          ragweed_pollen: Math.min(5, 0.5 * peak * daytime * wave),
           wind_speed_10m: 10 + dayIndex * 3 + (hour > 12 ? 8 : 2),
           precipitation: dayIndex === 2 && hour > 5 && hour < 11 ? 1.2 : 0
         };
@@ -36,13 +36,13 @@ export function getMockForecast(label = "Demo Meadow, CA"): ForecastPayload {
 
   return {
     location: {
-      latitude: 37.7749,
-      longitude: -122.4194,
+      latitude: 44.5646,
+      longitude: -123.262,
       label
     },
     days,
     hasPollenData: true,
     source: "demo",
-    pollenUnit: "grains_per_m3"
+    pollenUnit: "upi"
   };
 }

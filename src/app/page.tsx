@@ -280,6 +280,27 @@ export default function Home() {
     }
   }
 
+  async function loadDemoForecast() {
+    setLoading(true);
+    setError("");
+
+    try {
+      const payload = await fetchJson<ForecastPayload>("/api/forecast?demo=true&label=Corvallis%2C%20Oregon%2C%20US");
+      setForecast(payload);
+      setProfile((current) => ({
+        ...current,
+        locationLabel: payload.location.label,
+        latitude: payload.location.latitude,
+        longitude: payload.location.longitude
+      }));
+      setQuery(payload.location.label);
+    } catch (forecastError) {
+      setError(forecastError instanceof Error ? forecastError.message : "Could not load demo forecast.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function submitLocation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -405,6 +426,13 @@ export default function Home() {
             A personalized pollen and weather risk dashboard for seasonal allergies.
           </p>
         </div>
+        <button
+          className="focus-ring inline-flex items-center justify-center rounded-md border border-moss/20 px-3 py-2 text-sm font-semibold text-moss transition hover:bg-mint"
+          onClick={loadDemoForecast}
+          type="button"
+        >
+          Demo mode
+        </button>
       </header>
 
       <section className="grid w-full min-w-0 gap-4 xl:grid-cols-[minmax(260px,0.82fr)_minmax(0,1.35fr)_minmax(300px,0.95fr)] xl:grid-rows-[auto_auto_auto] xl:items-stretch">
