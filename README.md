@@ -1,6 +1,8 @@
 # AllergyScore
 
-AllergyScore estimates location-specific seasonal allergy severity from a user's allergy profile, symptoms, and pollen forecast data.
+AllergyScore estimates location-specific seasonal allergy severity from a user's allergy profile, symptoms, and pollen forecast data. 
+
+This program was created for the 2026 Beaverhacks Hackathon.
 
 ## Features
 
