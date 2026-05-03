@@ -13,6 +13,7 @@ export type UserProfile = {
   mode: ProfileMode;
   allergies: Record<AllergyKey, boolean>;
   sensitivities: Sensitivities;
+  asthmaRisk: boolean;
   currentSymptoms: number;
   medicationTaken: boolean;
   outdoorExposure: boolean;
@@ -22,6 +23,8 @@ export type SymptomLog = {
   date: string;
   score: number;
   notes?: string;
+  reactionScore?: number;
+  topTrigger?: AllergyKey;
 };
 
 export type ForecastHour = {

@@ -5,11 +5,14 @@ import {
   AlertTriangle,
   Cloud,
   Compass,
+  FileText,
   Loader2,
   MapPin,
+  Save,
   Search,
   Sprout,
   SunMedium,
+  UserPlus,
   Wind
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -30,6 +33,8 @@ import type {
 
 const PROFILE_KEY = "allergycast-profile";
 const LOG_KEY = "allergycast-symptom-logs";
+const PROFILE_LIST_KEY = "allergycast-saved-profiles";
+const ACTIVE_PROFILE_KEY = "allergycast-active-profile-id";
 
 const allergyLabels: Record<AllergyKey, string> = {
   tree: "Tree",
@@ -62,6 +67,14 @@ type QuizState = {
   severity: "mild" | "moderate" | "severe";
 };
 
+type SavedProfile = {
+  id: string;
+  name: string;
+  profile: UserProfile;
+  logs: SymptomLog[];
+  updatedAt: string;
+};
+
 function formatDate(date: string) {
   return new Intl.DateTimeFormat("en", {
     weekday: "short",
@@ -72,6 +85,15 @@ function formatDate(date: string) {
 
 function getMockSymptomLogs(): SymptomLog[] {
   const scores = [4, 5, 7, 6, 5, 8, 6];
+  const notes = [
+    "Runny nose and mild itchy eyes after walking outside.",
+    "Runny nose, sneezing, and light congestion.",
+    "Hives, runny nose, itchy eyes, and congestion after outdoor exposure.",
+    "Runny nose, itchy throat, and moderate congestion.",
+    "Sneezing and runny nose, improved indoors.",
+    "Hives, runny nose, itchy eyes, and worse congestion after yard work.",
+    "Runny nose, watery eyes, and mild skin itching."
+  ];
   const today = new Date();
 
   return scores.map((score, index) => {
@@ -81,7 +103,7 @@ function getMockSymptomLogs(): SymptomLog[] {
     return {
       date: date.toISOString().slice(0, 10),
       score,
-      notes: "Demo symptom log"
+      notes: notes[index]
     };
   });
 }
@@ -91,6 +113,59 @@ function scoreColor(score: number) {
   if (score >= 56) return "bg-orange-500";
   if (score >= 31) return "bg-yellow-400";
   return "bg-emerald-500";
+}
+
+function displayedLevel(score: number, asthmaRisk: boolean): SeverityLevel {
+  if (asthmaRisk) {
+    if (score >= 65) return "Severe";
+    if (score >= 31) return "High";
+    if (score >= 16) return "Moderate";
+    return "Low";
+  }
+
+  if (score >= 76) return "Severe";
+  if (score >= 56) return "High";
+  if (score >= 31) return "Moderate";
+  return "Low";
+}
+
+function recommendationFor(level: SeverityLevel, asthmaRisk: boolean) {
+  if (!asthmaRisk) {
+    return recommendationByLevel[level];
+  }
+
+  const asthmaAdvice: Record<SeverityLevel, string> = {
+    Low: "Keep your asthma action plan and quick-relief inhaler available.",
+    Moderate: "Use your asthma action plan. Keep rescue medication nearby before outdoor exposure.",
+    High: "Limit outdoor time, monitor breathing, and follow your clinician's asthma action plan.",
+    Severe: "Stay indoors if possible. Seek medical help if breathing symptoms worsen or rescue medicine is not helping."
+  };
+
+  return asthmaAdvice[level];
+}
+
+function getPeakWindow(day?: SeverityResult, hours?: ForecastPayload["days"][number]["hours"]) {
+  if (!day || !hours || hours.length === 0) return "Waiting for forecast";
+
+  const peakHour = hours.reduce<{ time: string; value: number }>(
+    (peak, hour) => {
+      const value =
+        (hour.birch_pollen ?? 0) +
+        (hour.grass_pollen ?? 0) +
+        (hour.ragweed_pollen ?? 0);
+      return value > peak.value ? { time: hour.time, value } : peak;
+    },
+    { time: hours[0].time, value: -1 }
+  );
+  const hour = Number(peakHour.time.slice(11, 13));
+  const start = Math.max(0, hour - 1);
+  const end = Math.min(23, hour + 2);
+  const formatter = new Intl.DateTimeFormat("en", { hour: "numeric" });
+  const date = peakHour.time.slice(0, 10);
+
+  return `${formatter.format(new Date(`${date}T${String(start).padStart(2, "0")}:00:00`))}-${formatter.format(
+    new Date(`${date}T${String(end).padStart(2, "0")}:00:00`)
+  )}`;
 }
 
 function pollenLevel(count: number) {
@@ -189,6 +264,9 @@ async function fetchJson<T>(url: string): Promise<T> {
 export default function Home() {
   const [profile, setProfile] = useState<UserProfile>(defaultProfile);
   const [logs, setLogs] = useState<SymptomLog[]>([]);
+  const [profileName, setProfileName] = useState("My profile");
+  const [savedProfiles, setSavedProfiles] = useState<SavedProfile[]>([]);
+  const [activeProfileId, setActiveProfileId] = useState("");
   const [query, setQuery] = useState("");
   const [locationOptions, setLocationOptions] = useState<LocationOption[]>([]);
   const [forecast, setForecast] = useState<ForecastPayload | null>(null);
@@ -197,6 +275,7 @@ export default function Home() {
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
   const [loadedInitialForecast, setLoadedInitialForecast] = useState(false);
+  const [symptomNotes, setSymptomNotes] = useState("");
   const [quiz, setQuiz] = useState<QuizState>({
     season: "spring",
     outdoors: "sometimes",
@@ -206,6 +285,26 @@ export default function Home() {
   useEffect(() => {
     const savedProfile = window.localStorage.getItem(PROFILE_KEY);
     const savedLogs = window.localStorage.getItem(LOG_KEY);
+    const savedProfileList = window.localStorage.getItem(PROFILE_LIST_KEY);
+    const savedActiveProfileId = window.localStorage.getItem(ACTIVE_PROFILE_KEY);
+
+    if (savedProfileList) {
+      const parsedProfiles = JSON.parse(savedProfileList) as SavedProfile[];
+      setSavedProfiles(parsedProfiles);
+
+      if (savedActiveProfileId) {
+        const activeProfile = parsedProfiles.find((item) => item.id === savedActiveProfileId);
+        if (activeProfile) {
+          setActiveProfileId(activeProfile.id);
+          setProfileName(activeProfile.name);
+          setProfile(normalizeProfile(activeProfile.profile));
+          setLogs(activeProfile.logs);
+          setQuery(activeProfile.profile.locationLabel);
+          return;
+        }
+      }
+    }
+
     if (savedProfile) {
       setProfile(normalizeProfile(JSON.parse(savedProfile) as Partial<UserProfile>));
     }
@@ -223,6 +322,16 @@ export default function Home() {
     window.localStorage.setItem(LOG_KEY, JSON.stringify(logs));
   }, [logs]);
 
+  useEffect(() => {
+    window.localStorage.setItem(PROFILE_LIST_KEY, JSON.stringify(savedProfiles));
+  }, [savedProfiles]);
+
+  useEffect(() => {
+    if (activeProfileId) {
+      window.localStorage.setItem(ACTIVE_PROFILE_KEY, activeProfileId);
+    }
+  }, [activeProfileId]);
+
   const severity = useMemo<SeverityResult[]>(() => {
     if (!forecast) return [];
     return calculateForecast(forecast.days, profile, forecast.pollenUnit);
@@ -230,18 +339,14 @@ export default function Home() {
 
   const today = severity[0];
   const reaction = today?.reactionScore;
+  const todayLevel = today ? displayedLevel(today.score, profile.asthmaRisk) : undefined;
+  const reactionLevel = reaction ? displayedLevel(reaction.score, profile.asthmaRisk) : undefined;
   const totalPollen = today
     ? Object.values(today.pollenCounts).reduce((sum, value) => sum + value, 0)
     : 0;
   const tomorrow = severity[1];
   const tomorrowDelta = tomorrow && reaction ? Math.round(tomorrow.reactionScore.score - reaction.score) : 0;
-  const peakWindow = today
-    ? today.score >= 65
-      ? "Late morning to mid-afternoon"
-      : today.score >= 35
-        ? "Midday"
-        : "No clear peak today"
-    : "Waiting for forecast";
+  const peakWindow = getPeakWindow(today, forecast?.days[0]?.hours);
   const loggedToday = logs.some((log) => log.date === new Date().toISOString().slice(0, 10));
   const patternTrigger = reaction ? allergyLabels[reaction.topAllergen] : "Tree";
   const hasTrendInsights = logs.length >= 3;
@@ -476,10 +581,122 @@ export default function Home() {
       {
         date: new Date().toISOString().slice(0, 10),
         score: profile.currentSymptoms,
-        notes: `Reaction score ${reaction ? Math.round(reaction.score) : "--"}`
+        notes: symptomNotes || `Reaction score ${reaction ? Math.round(reaction.score) : "--"}`,
+        reactionScore: reaction ? Math.round(reaction.score) : undefined,
+        topTrigger: reaction?.topAllergen
       },
       ...current
     ]);
+    setSymptomNotes("");
+  }
+
+  function saveCurrentProfile() {
+    const trimmedName = profileName.trim() || "My profile";
+    const id = activeProfileId || crypto.randomUUID();
+    const nextSavedProfile: SavedProfile = {
+      id,
+      name: trimmedName,
+      profile,
+      logs,
+      updatedAt: new Date().toISOString()
+    };
+
+    setActiveProfileId(id);
+    setProfileName(trimmedName);
+    setSavedProfiles((current) => {
+      const existingIndex = current.findIndex((item) => item.id === id);
+      if (existingIndex === -1) return [nextSavedProfile, ...current];
+
+      return current.map((item) => (item.id === id ? nextSavedProfile : item));
+    });
+  }
+
+  function switchSavedProfile(savedProfile: SavedProfile) {
+    const nextProfile = normalizeProfile(savedProfile.profile);
+
+    setActiveProfileId(savedProfile.id);
+    setProfileName(savedProfile.name);
+    setProfile(nextProfile);
+    setLogs(savedProfile.logs);
+    setSymptomNotes("");
+    setQuery(nextProfile.locationLabel);
+    void loadForecast(nextProfile);
+  }
+
+  function startNewProfile() {
+    const nextName = profileName.trim() || "New profile";
+    const nextProfile = defaultProfile();
+    const id = crypto.randomUUID();
+
+    const nextSavedProfile: SavedProfile = {
+      id,
+      name: nextName,
+      profile: nextProfile,
+      logs: [],
+      updatedAt: new Date().toISOString()
+    };
+
+    setLogs([]);
+    setSymptomNotes("");
+    setProfile(nextProfile);
+    setProfileName(nextName);
+    setActiveProfileId(id);
+    setQuery(nextProfile.locationLabel);
+    setSavedProfiles((current) => [nextSavedProfile, ...current]);
+    void loadForecast(nextProfile);
+  }
+
+  function generateDoctorReport() {
+    const recentLogs = logs.slice(0, 30);
+    const rows = recentLogs
+      .map(
+        (log) => `
+          <tr>
+            <td>${formatDate(log.date)}</td>
+            <td>${log.score}/10</td>
+            <td>${log.reactionScore ?? "--"}</td>
+            <td>${log.topTrigger ? allergyLabels[log.topTrigger] : "--"}</td>
+            <td>${log.notes ?? ""}</td>
+          </tr>
+        `
+      )
+      .join("");
+    const report = window.open("", "_blank");
+    if (!report) return;
+
+    report.document.write(`
+      <html>
+        <head>
+          <title>AllergyScore Doctor Report</title>
+          <style>
+            body { font-family: Arial, sans-serif; color: #1c2621; padding: 32px; }
+            h1 { margin-bottom: 4px; }
+            .meta { color: #53645a; margin-bottom: 24px; }
+            .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0; }
+            .card { border: 1px solid #dce7de; border-radius: 8px; padding: 12px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            th, td { border-bottom: 1px solid #dce7de; text-align: left; padding: 8px; font-size: 13px; }
+            th { background: #eef7ef; }
+          </style>
+        </head>
+        <body>
+          <h1>AllergyScore Doctor Report</h1>
+          <div class="meta">${profile.locationLabel} · Generated ${new Date().toLocaleDateString()}</div>
+          <div class="grid">
+            <div class="card"><strong>Top trigger</strong><br />${patternTrigger}</div>
+            <div class="card"><strong>Average symptoms</strong><br />${logs.length > 0 ? averageSymptomScore.toFixed(1) : "--"}/10</div>
+            <div class="card"><strong>Asthma flag</strong><br />${profile.asthmaRisk ? "Yes" : "No"}</div>
+          </div>
+          <h2>Last 30 days</h2>
+          <table>
+            <thead><tr><th>Date</th><th>Symptoms</th><th>Reaction</th><th>Top trigger</th><th>Notes</th></tr></thead>
+            <tbody>${rows || "<tr><td colspan='5'>No symptom logs yet.</td></tr>"}</tbody>
+          </table>
+          <script>window.print()</script>
+        </body>
+      </html>
+    `);
+    report.document.close();
   }
 
   return (
@@ -583,6 +800,21 @@ export default function Home() {
               ) : null}
             </form>
 
+            <label className="mt-3 flex items-start gap-3 rounded-md border border-moss/10 bg-skywash p-3 text-sm font-semibold text-ink">
+              <input
+                checked={profile.asthmaRisk}
+                className="mt-1"
+                onChange={(event) =>
+                  setProfile((current) => ({
+                    ...current,
+                    asthmaRisk: event.target.checked
+                  }))
+                }
+                type="checkbox"
+              />
+              <span>I have asthma or I&apos;m caring for a child with asthma.</span>
+            </label>
+
             {profile.mode === "known" ? (
               <div className="mt-3 space-y-2.5">
                 {(Object.keys(allergyLabels) as AllergyKey[]).map((key) => (
@@ -682,6 +914,62 @@ export default function Home() {
                 </button>
               </div>
             )}
+
+          </section>
+
+          <section className="rounded-lg border border-moss/10 bg-white p-3 shadow-soft">
+            <h2 className="text-lg font-bold text-ink">Profile manager</h2>
+            <label className="mt-3 block">
+              <span className="text-sm font-semibold text-ink/70">Profile name</span>
+              <input
+                className="focus-ring mt-2 w-full rounded-md border border-moss/20 px-3 py-2.5 text-sm"
+                onChange={(event) => setProfileName(event.target.value)}
+                placeholder="Example: Joey, Mom, Child"
+                value={profileName}
+              />
+            </label>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+              <button
+                className="focus-ring flex w-full items-center justify-center gap-2 rounded-md bg-moss px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink"
+                onClick={saveCurrentProfile}
+                type="button"
+              >
+                <Save size={16} />
+                Save profile
+              </button>
+              <button
+                className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-4 py-2.5 text-sm font-semibold text-moss transition hover:bg-mint"
+                onClick={startNewProfile}
+                type="button"
+              >
+                <UserPlus size={16} />
+                New profile
+              </button>
+            </div>
+            {savedProfiles.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs font-semibold uppercase text-ink/50">Switch profiles</p>
+                {savedProfiles.map((savedProfile) => (
+                  <button
+                    className={`focus-ring flex w-full items-center justify-between gap-3 rounded-md border px-3 py-2 text-left text-sm transition ${
+                      activeProfileId === savedProfile.id
+                        ? "border-fern bg-mint/50 text-moss"
+                        : "border-moss/10 bg-[#fbfdf9] text-ink hover:bg-mint/35"
+                    }`}
+                    key={savedProfile.id}
+                    onClick={() => switchSavedProfile(savedProfile)}
+                    type="button"
+                  >
+                    <span className="font-semibold">{savedProfile.name}</span>
+                    <span className="text-xs text-ink/50">{savedProfile.logs.length} logs</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-3 rounded-md bg-mint/35 p-3 text-sm text-ink/65">
+                Name this setup, then save it so you can switch back later.
+              </p>
+            )}
           </section>
         </aside>
 
@@ -691,13 +979,13 @@ export default function Home() {
                 <div>
                   <p className="text-sm font-semibold uppercase text-fern">Today</p>
                   <h2 className="mt-1 text-2xl font-bold text-ink">
-                    {today ? today.level : "No forecast yet"}
+                    {todayLevel ?? "No forecast yet"}
                   </h2>
                   <p className="mt-1 text-sm text-ink/60">Environmental Risk</p>
                 </div>
                 <div
                   className={`grid h-24 w-24 shrink-0 place-items-center rounded-full border-8 sm:h-28 sm:w-28 ${
-                    today ? levelStyles[today.level] : "border-moss/10 bg-mint/50 text-moss"
+                    todayLevel ? levelStyles[todayLevel] : "border-moss/10 bg-mint/50 text-moss"
                   }`}
                 >
                   <span className="text-3xl font-black">{today ? Math.round(today.score) : "--"}</span>
@@ -722,10 +1010,10 @@ export default function Home() {
                   </h3>
                   <span
                     className={`mt-2 inline-flex rounded-full border px-3 py-1 text-sm font-bold ${
-                      reaction ? levelStyles[reaction.level] : "border-moss/10 bg-mint/50 text-moss"
+                      reactionLevel ? levelStyles[reactionLevel] : "border-moss/10 bg-mint/50 text-moss"
                     }`}
                   >
-                    {reaction ? reaction.level : "Waiting"}
+                    {reactionLevel ?? "Waiting"}
                   </span>
                 </div>
                 <div className="h-24 w-24 rounded-full bg-moss/10 p-2">
@@ -746,8 +1034,18 @@ export default function Home() {
                   <div>
                     <h3 className="font-bold text-ink">What should I do?</h3>
                     <p className="mt-1 text-sm leading-6 text-ink/75">
-                      {reaction ? recommendationByLevel[reaction.level] : "Add a location to get guidance."}
+                      {reactionLevel ? recommendationFor(reactionLevel, profile.asthmaRisk) : "Add a location to get guidance."}
                     </p>
+                    {profile.asthmaRisk ? (
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold text-moss">
+                        <a href="https://www.nhlbi.nih.gov/health/asthma/treatment-action-plan" rel="noreferrer" target="_blank">
+                          Asthma action plan
+                        </a>
+                        <a href="https://www.nhlbi.nih.gov/health/asthma/children" rel="noreferrer" target="_blank">
+                          Children with asthma
+                        </a>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -812,8 +1110,8 @@ export default function Home() {
                           <ConditionIcon className="text-fern" size={18} />
                         </div>
                         <div className="mt-3 flex items-center justify-between">
-                          <span className={`rounded-full border px-3 py-1 text-sm font-bold ${levelStyles[day.reactionScore.level]}`}>
-                            {day.reactionScore.level}
+                          <span className={`rounded-full border px-3 py-1 text-sm font-bold ${levelStyles[displayedLevel(day.reactionScore.score, profile.asthmaRisk)]}`}>
+                            {displayedLevel(day.reactionScore.score, profile.asthmaRisk)}
                           </span>
                           <span className="flex items-center gap-2 text-2xl font-black text-ink">
                             <span className="text-lg text-ink/50">{trendArrow(day, today)}</span>
@@ -871,7 +1169,7 @@ export default function Home() {
 
             <div className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft">
               <h2 className="text-lg font-bold text-ink">Symptom journal</h2>
-              <label className="mt-3 block">
+            <label className="mt-3 block">
                 <div className="flex justify-between text-sm font-semibold text-ink/70">
                   <span>Today&apos;s symptoms</span>
                   <span>{profile.currentSymptoms}/10</span>
@@ -888,9 +1186,18 @@ export default function Home() {
                   }
                   type="range"
                   value={profile.currentSymptoms}
-                />
-              </label>
-              <button
+              />
+            </label>
+            <label className="mt-3 block">
+              <span className="text-sm font-semibold text-ink/70">Notes</span>
+              <textarea
+                className="focus-ring mt-2 min-h-20 w-full rounded-md border border-moss/20 px-3 py-2 text-sm"
+                onChange={(event) => setSymptomNotes(event.target.value)}
+                placeholder="Symptoms, medication, outdoor exposure, sleep, or breathing notes"
+                value={symptomNotes}
+              />
+            </label>
+            <button
                 className={`focus-ring mt-3 flex w-full items-center justify-center rounded-md px-3 py-2 text-sm font-semibold text-white transition ${
                   loggedToday ? "bg-emerald-600" : "bg-moss hover:bg-ink"
                 }`}
@@ -898,14 +1205,27 @@ export default function Home() {
                 onClick={logSymptoms}
                 type="button"
               >
-                {loggedToday ? "Logged today" : "Log symptoms"}
-              </button>
+              {loggedToday ? "Logged today" : "Log symptoms"}
+            </button>
+            <button
+              className="focus-ring mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-3 py-2 text-sm font-semibold text-moss transition hover:bg-mint"
+              onClick={generateDoctorReport}
+              type="button"
+            >
+              <FileText size={16} />
+              Generate report for my doctor
+            </button>
               {logs.length > 0 ? (
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {logs.slice(0, 6).map((log) => (
-                    <div key={log.date} className="flex items-center justify-between rounded-md bg-mint/35 px-3 py-2 text-sm">
-                      <span className="text-ink/70">{formatDate(log.date)}</span>
-                      <span className="font-bold text-ink">{log.score}/10</span>
+                    <div key={log.date} className="rounded-md bg-mint/35 px-3 py-2 text-sm">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-ink/70">{formatDate(log.date)}</span>
+                        <span className="font-bold text-ink">{log.score}/10</span>
+                      </div>
+                      {log.notes ? (
+                        <p className="mt-1 line-clamp-2 text-xs leading-5 text-ink/65">{log.notes}</p>
+                      ) : null}
                     </div>
                   ))}
                 </div>

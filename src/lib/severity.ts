@@ -40,6 +40,7 @@ export function defaultProfile(): UserProfile {
       grass: 3,
       weed: 3
     },
+    asthmaRisk: false,
     currentSymptoms: 2,
     medicationTaken: false,
     outdoorExposure: true
