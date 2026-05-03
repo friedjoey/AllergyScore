@@ -85,17 +85,28 @@ function formatDate(date: string) {
   }).format(new Date(`${date}T12:00:00`));
 }
 
+const demoAllergyScores = [38, 44, 62, 55, 41, 72, 58];
+const demoTopTriggers: AllergyKey[] = ["tree", "tree", "tree", "grass", "tree", "tree", "grass"];
+const demoSymptomNotes = [
+  "Runny nose and mild itchy eyes after walking outside.",
+  "Runny nose, sneezing, and light congestion.",
+  "Hives, runny nose, itchy eyes, and congestion after outdoor exposure.",
+  "Runny nose, itchy throat, and moderate congestion.",
+  "Sneezing and runny nose, improved indoors.",
+  "Hives, runny nose, itchy eyes, and worse congestion after yard work.",
+  "Runny nose, watery eyes, and mild skin itching."
+];
+
+function enrichDemoSymptomLogs(logs: SymptomLog[]) {
+  return logs.map((log, index) => ({
+    ...log,
+    allergyScore: log.allergyScore ?? demoAllergyScores[index % demoAllergyScores.length],
+    topTrigger: log.topTrigger ?? demoTopTriggers[index % demoTopTriggers.length]
+  }));
+}
+
 function getMockSymptomLogs(): SymptomLog[] {
   const scores = [4, 5, 7, 6, 5, 8, 6];
-  const notes = [
-    "Runny nose and mild itchy eyes after walking outside.",
-    "Runny nose, sneezing, and light congestion.",
-    "Hives, runny nose, itchy eyes, and congestion after outdoor exposure.",
-    "Runny nose, itchy throat, and moderate congestion.",
-    "Sneezing and runny nose, improved indoors.",
-    "Hives, runny nose, itchy eyes, and worse congestion after yard work.",
-    "Runny nose, watery eyes, and mild skin itching."
-  ];
   const today = new Date();
 
   return scores.map((score, index) => {
@@ -105,7 +116,9 @@ function getMockSymptomLogs(): SymptomLog[] {
     return {
       date: date.toISOString().slice(0, 10),
       score,
-      notes: notes[index]
+      notes: demoSymptomNotes[index],
+      allergyScore: demoAllergyScores[index],
+      topTrigger: demoTopTriggers[index]
     };
   });
 }
@@ -269,7 +282,12 @@ export default function Home() {
     const savedActiveProfileId = window.localStorage.getItem(ACTIVE_PROFILE_KEY);
 
     if (savedProfileList) {
-      const parsedProfiles = JSON.parse(savedProfileList) as SavedProfile[];
+      const parsedProfiles = (JSON.parse(savedProfileList) as SavedProfile[]).map((item) => ({
+        ...item,
+        logs: item.name.trim().toLowerCase() === "joseph"
+          ? enrichDemoSymptomLogs(item.logs)
+          : item.logs
+      }));
       setSavedProfiles(parsedProfiles);
 
       if (savedActiveProfileId) {
@@ -757,7 +775,7 @@ export default function Home() {
           </div>
           <h1 className="mt-1 text-3xl font-bold text-ink sm:text-4xl">AllergyScore</h1>
           <p className="mt-1 max-w-2xl text-sm text-ink/70">
-            A personalized pollen and weather risk dashboard for seasonal allergies.
+            A personalized pollen risk dashboard for seasonal allergies.
           </p>
         </div>
         <button
@@ -1196,7 +1214,7 @@ export default function Home() {
                     >
                       {savedProfiles.map((savedProfile) => (
                         <option key={savedProfile.id} value={savedProfile.id}>
-                          {savedProfile.name} ({savedProfile.logs.length} logs)
+                          {savedProfile.name}
                         </option>
                       ))}
                     </select>
