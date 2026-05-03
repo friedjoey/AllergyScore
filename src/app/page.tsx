@@ -9,6 +9,7 @@ import {
   FileText,
   Loader2,
   MapPin,
+  Pencil,
   Save,
   Search,
   Sprout,
@@ -136,37 +137,13 @@ function recommendationFor(level: SeverityLevel, asthmaRisk: boolean) {
   }
 
   const asthmaAdvice: Record<SeverityLevel, string> = {
-    Low: "Keep your asthma action plan and quick-relief inhaler available.",
-    Moderate: "Use your asthma action plan. Keep rescue medication nearby before outdoor exposure.",
-    High: "Limit outdoor time, monitor breathing, and follow your clinician's asthma action plan.",
+    Low: "Breathing risk looks manageable today. Keep your usual inhaler or care plan available if you use one.",
+    Moderate: "Plan ahead before outdoor exposure. Keep rescue medication nearby and watch for coughing, wheezing, or chest tightness.",
+    High: "Limit outdoor time and monitor breathing closely. Follow your care plan if symptoms start.",
     Severe: "Stay indoors if possible. Seek medical help if breathing symptoms worsen or rescue medicine is not helping."
   };
 
   return asthmaAdvice[level];
-}
-
-function getPeakWindow(day?: SeverityResult, hours?: ForecastPayload["days"][number]["hours"]) {
-  if (!day || !hours || hours.length === 0) return "Waiting for forecast";
-
-  const peakHour = hours.reduce<{ time: string; value: number }>(
-    (peak, hour) => {
-      const value =
-        (hour.birch_pollen ?? 0) +
-        (hour.grass_pollen ?? 0) +
-        (hour.ragweed_pollen ?? 0);
-      return value > peak.value ? { time: hour.time, value } : peak;
-    },
-    { time: hours[0].time, value: -1 }
-  );
-  const hour = Number(peakHour.time.slice(11, 13));
-  const start = Math.max(0, hour - 1);
-  const end = Math.min(23, hour + 2);
-  const formatter = new Intl.DateTimeFormat("en", { hour: "numeric" });
-  const date = peakHour.time.slice(0, 10);
-
-  return `${formatter.format(new Date(`${date}T${String(start).padStart(2, "0")}:00:00`))}-${formatter.format(
-    new Date(`${date}T${String(end).padStart(2, "0")}:00:00`)
-  )}`;
 }
 
 function pollenLevel(count: number) {
@@ -194,7 +171,7 @@ function formatPollenValue(value: number, unit?: ForecastPayload["pollenUnit"]) 
 
 function trendArrow(day: SeverityResult, today?: SeverityResult) {
   if (!today) return "→";
-  const delta = day.reactionScore.score - today.reactionScore.score;
+  const delta = day.allergyScore.score - today.allergyScore.score;
   if (delta > 3) return "↑";
   if (delta < -3) return "↓";
   return "→";
@@ -277,6 +254,7 @@ export default function Home() {
   const [error, setError] = useState("");
   const [loadedInitialForecast, setLoadedInitialForecast] = useState(false);
   const [symptomNotes, setSymptomNotes] = useState("");
+  const [editingTodayLog, setEditingTodayLog] = useState(false);
   const [quiz, setQuiz] = useState<QuizState>({
     season: "spring",
     outdoors: "sometimes",
@@ -339,33 +317,20 @@ export default function Home() {
   }, [forecast, profile]);
 
   const today = severity[0];
-  const reaction = today?.reactionScore;
+  const allergyScore = today?.allergyScore;
   const todayLevel = today ? displayedLevel(today.score, profile.asthmaRisk) : undefined;
-  const reactionLevel = reaction ? displayedLevel(reaction.score, profile.asthmaRisk) : undefined;
+  const allergyScoreLevel = allergyScore ? displayedLevel(allergyScore.score, profile.asthmaRisk) : undefined;
   const totalPollen = today
     ? Object.values(today.pollenCounts).reduce((sum, value) => sum + value, 0)
     : 0;
-  const tomorrow = severity[1];
-  const tomorrowDelta = tomorrow && reaction ? Math.round(tomorrow.reactionScore.score - reaction.score) : 0;
-  const peakWindow = getPeakWindow(today, forecast?.days[0]?.hours);
-  const loggedToday = logs.some((log) => log.date === new Date().toISOString().slice(0, 10));
-  const patternTrigger = reaction ? allergyLabels[reaction.topAllergen] : "Tree";
-  const hasTrendInsights = logs.length >= 3;
+  const todayDate = new Date().toISOString().slice(0, 10);
+  const todayLog = logs.find((log) => log.date === todayDate);
+  const loggedToday = Boolean(todayLog);
+  const patternTrigger = allergyScore ? allergyLabels[allergyScore.topAllergen] : "Tree";
   const averageSymptomScore =
     logs.length > 0
       ? logs.reduce((sum, log) => sum + log.score, 0) / logs.length
       : 0;
-  const worstLog = logs.reduce<SymptomLog | null>(
-    (worst, log) => (!worst || log.score > worst.score ? log : worst),
-    null
-  );
-  const highSymptomDays = logs.filter((log) => log.score >= 7).length;
-  const patternSuggestion =
-    reaction && reaction.score >= 75
-      ? `Prioritize ${patternTrigger.toLowerCase()} exposure control today: keep windows closed and limit long outdoor blocks.`
-      : reaction && reaction.score >= 50
-        ? `Plan around ${patternTrigger.toLowerCase()} exposure and consider medication before extended outdoor time.`
-        : `Keep logging symptoms so AllergyScore can confirm whether ${patternTrigger.toLowerCase()} is consistently driving symptoms.`;
 
   useEffect(() => {
     if (loadedInitialForecast || forecast || profile.latitude === null || profile.longitude === null) {
@@ -510,13 +475,27 @@ export default function Home() {
     setError("");
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        let locationLabel = "Current location";
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+
+        try {
+          const location = await fetchJson<LocationOption>(
+            `/api/geocode?lat=${encodeURIComponent(latitude)}&lon=${encodeURIComponent(longitude)}`
+          );
+          locationLabel = location.label;
+        } catch {
+          locationLabel = "Current location";
+        }
+
         const nextProfile = {
           ...profile,
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          locationLabel: "Current location"
+          latitude,
+          longitude,
+          locationLabel
         };
 
+        setQuery(locationLabel);
         setProfile(nextProfile);
         setLocating(false);
         await loadForecast(nextProfile);
@@ -576,18 +555,49 @@ export default function Home() {
   }
 
   function logSymptoms() {
+    const nextLog: SymptomLog = {
+      date: todayDate,
+      score: profile.currentSymptoms,
+      notes: symptomNotes || `AllergyScore ${allergyScore ? Math.round(allergyScore.score) : "--"}`,
+      allergyScore: allergyScore ? Math.round(allergyScore.score) : undefined,
+      topTrigger: allergyScore?.topAllergen
+    };
+
+    if (loggedToday && editingTodayLog) {
+      setLogs((current) => current.map((log) => (log.date === todayDate ? nextLog : log)));
+      setEditingTodayLog(false);
+      setSymptomNotes("");
+      return;
+    }
+
     if (loggedToday) return;
 
     setLogs((current) => [
-      {
-        date: new Date().toISOString().slice(0, 10),
-        score: profile.currentSymptoms,
-        notes: symptomNotes || `Reaction score ${reaction ? Math.round(reaction.score) : "--"}`,
-        reactionScore: reaction ? Math.round(reaction.score) : undefined,
-        topTrigger: reaction?.topAllergen
-      },
+      nextLog,
       ...current
     ]);
+    setSymptomNotes("");
+  }
+
+  function editTodayLog() {
+    if (!todayLog) return;
+
+    setProfile((current) => ({
+      ...current,
+      currentSymptoms: todayLog.score
+    }));
+    setSymptomNotes(todayLog.notes ?? "");
+    setEditingTodayLog(true);
+  }
+
+  function cancelTodayLogEdit() {
+    setEditingTodayLog(false);
+    setSymptomNotes("");
+  }
+
+  function removeTodayLog() {
+    setLogs((current) => current.filter((log) => log.date !== todayDate));
+    setEditingTodayLog(false);
     setSymptomNotes("");
   }
 
@@ -685,7 +695,7 @@ export default function Home() {
           <tr>
             <td>${formatDate(log.date)}</td>
             <td>${log.score}/10</td>
-            <td>${log.reactionScore ?? "--"}</td>
+            <td>${log.allergyScore ?? "--"}</td>
             <td>${log.topTrigger ? allergyLabels[log.topTrigger] : "--"}</td>
             <td>${log.notes ?? ""}</td>
           </tr>
@@ -701,6 +711,8 @@ export default function Home() {
           <title>AllergyScore Doctor Report</title>
           <style>
             body { font-family: Arial, sans-serif; color: #1c2621; padding: 32px; }
+            .toolbar { display: flex; justify-content: flex-end; margin-bottom: 20px; }
+            button { background: #355e3b; border: 0; border-radius: 6px; color: white; cursor: pointer; font-weight: 700; padding: 10px 16px; }
             h1 { margin-bottom: 4px; }
             .meta { color: #53645a; margin-bottom: 24px; }
             .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 20px 0; }
@@ -708,9 +720,13 @@ export default function Home() {
             table { width: 100%; border-collapse: collapse; margin-top: 16px; }
             th, td { border-bottom: 1px solid #dce7de; text-align: left; padding: 8px; font-size: 13px; }
             th { background: #eef7ef; }
+            @media print { .toolbar { display: none; } body { padding: 0; } }
           </style>
         </head>
         <body>
+          <div class="toolbar">
+            <button onclick="window.print()">Print report</button>
+          </div>
           <h1>AllergyScore Doctor Report</h1>
           <div class="meta">${profile.locationLabel} · Generated ${new Date().toLocaleDateString()}</div>
           <div class="grid">
@@ -720,10 +736,9 @@ export default function Home() {
           </div>
           <h2>Last 30 days</h2>
           <table>
-            <thead><tr><th>Date</th><th>Symptoms</th><th>Reaction</th><th>Top trigger</th><th>Notes</th></tr></thead>
+            <thead><tr><th>Date</th><th>Symptoms</th><th>AllergyScore</th><th>Top trigger</th><th>Notes</th></tr></thead>
             <tbody>${rows || "<tr><td colspan='5'>No symptom logs yet.</td></tr>"}</tbody>
           </table>
-          <script>window.print()</script>
         </body>
       </html>
     `);
@@ -731,7 +746,7 @@ export default function Home() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-4 overflow-x-hidden px-3 py-3 sm:px-4 lg:px-5">
+    <main className="mx-auto flex min-h-screen w-full max-w-[1760px] flex-col gap-4 overflow-x-hidden px-6 py-4 sm:px-8 lg:px-12 xl:px-16">
       <header className="flex flex-col justify-between gap-2 border-b border-moss/10 pb-3 md:flex-row md:items-center">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase text-fern">
@@ -744,7 +759,7 @@ export default function Home() {
           </p>
         </div>
         <button
-          className="focus-ring inline-flex items-center justify-center rounded-md border border-moss/20 px-3 py-2 text-sm font-semibold text-moss transition hover:bg-mint"
+          className="focus-ring inline-flex items-center justify-center rounded-md border border-moss/20 px-2.5 py-1.5 text-sm font-semibold text-moss transition hover:bg-mint"
           onClick={loadDemoForecast}
           type="button"
         >
@@ -754,12 +769,12 @@ export default function Home() {
 
       <section className="grid w-full min-w-0 gap-4 xl:grid-cols-[minmax(260px,0.82fr)_minmax(0,1.35fr)_minmax(300px,0.95fr)] xl:grid-rows-[auto_auto_auto_auto_auto_auto] xl:items-stretch">
         <aside className="order-1 flex min-w-0 flex-col gap-4 xl:col-start-1 xl:row-span-2 xl:row-start-1">
-          <section className="rounded-lg border border-moss/10 bg-white p-3 shadow-soft">
-            <h2 className="text-lg font-bold text-ink">Profile</h2>
-            <div className="mt-4 grid grid-cols-2 rounded-md bg-moss/10 p-1">
+          <section className="rounded-lg border border-moss/10 bg-white p-2.5 shadow-soft">
+            <h2 className="text-base font-bold text-ink">Profile</h2>
+            <div className="mt-3 grid grid-cols-2 rounded-md bg-moss/10 p-1">
               {(["known", "general"] as const).map((mode) => (
                 <button
-                  className={`focus-ring rounded px-3 py-2 text-sm font-semibold ${
+                  className={`focus-ring rounded px-2.5 py-1.5 text-sm font-semibold ${
                     profile.mode === mode ? "bg-white text-moss shadow-sm" : "text-ink/65"
                   }`}
                   key={mode}
@@ -777,7 +792,7 @@ export default function Home() {
                 <div className="relative mt-2 flex gap-2">
                   <div className="relative min-w-0 flex-1">
                     <input
-                      className="focus-ring w-full rounded-md border border-moss/20 px-3 py-2.5"
+                      className="focus-ring w-full rounded-md border border-moss/20 px-2.5 py-2"
                       onChange={(event) => setQuery(event.target.value)}
                       placeholder="City or ZIP"
                       value={query}
@@ -785,14 +800,14 @@ export default function Home() {
                     {query.trim().length >= 2 && (locationOptions.length > 0 || suggesting) ? (
                       <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-20 overflow-hidden rounded-md border border-moss/15 bg-white shadow-soft">
                         {suggesting ? (
-                          <div className="flex items-center gap-2 px-3 py-3 text-sm text-ink/60">
+                          <div className="flex items-center gap-2 px-3 py-2 text-sm text-ink/60">
                             <Loader2 className="animate-spin" size={15} />
                             Searching locations
                           </div>
                         ) : null}
                         {locationOptions.map((option) => (
                           <button
-                            className="flex w-full items-start gap-2 px-3 py-3 text-left text-sm transition hover:bg-mint/60 focus:bg-mint/60 focus:outline-none"
+                            className="flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition hover:bg-mint/60 focus:bg-mint/60 focus:outline-none"
                             key={`${option.latitude}-${option.longitude}-${option.label}`}
                             onClick={() => selectLocation(option)}
                             type="button"
@@ -806,7 +821,7 @@ export default function Home() {
                   </div>
                   <button
                     aria-label="Search location"
-                    className="focus-ring grid h-11 w-11 place-items-center rounded-md bg-fern text-white transition hover:bg-moss"
+                    className="focus-ring grid h-10 w-10 place-items-center rounded-md bg-fern text-white transition hover:bg-moss"
                     type="submit"
                   >
                     {loading ? <Loader2 className="animate-spin" size={19} /> : <Search size={19} />}
@@ -815,7 +830,7 @@ export default function Home() {
               </label>
 
               <button
-                className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-4 py-2.5 font-semibold text-moss transition hover:bg-mint"
+                className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-2.5 py-1.5 font-semibold text-moss transition hover:bg-mint"
                 onClick={useGps}
                 type="button"
               >
@@ -843,7 +858,7 @@ export default function Home() {
                 }
                 type="checkbox"
               />
-              <span>I have asthma or I&apos;m caring for a child with asthma.</span>
+              <span>I have asthma or breathing sensitivity</span>
             </label>
 
             {profile.mode === "known" ? (
@@ -880,13 +895,13 @@ export default function Home() {
                 ))}
               </div>
             ) : (
-              <div className="mt-4 rounded-md border border-moss/10 bg-mint/30 p-3">
+              <div className="mt-3 rounded-md border border-moss/10 bg-mint/30 p-3">
                 <p className="font-bold text-ink">Estimate your sensitivities</p>
-                <div className="mt-4 space-y-3">
+                <div className="mt-3 space-y-3">
                   <label className="block text-sm font-semibold text-ink/70">
                     Which seasons are worst for you?
                     <select
-                      className="focus-ring mt-2 w-full rounded-md border border-moss/20 bg-white px-3 py-2"
+                      className="focus-ring mt-2 w-full rounded-md border border-moss/20 bg-white px-2.5 py-1.5"
                       onChange={(event) =>
                         setQuiz((current) => ({
                           ...current,
@@ -904,7 +919,7 @@ export default function Home() {
                   <label className="block text-sm font-semibold text-ink/70">
                     Do outdoor activities make symptoms worse?
                     <select
-                      className="focus-ring mt-2 w-full rounded-md border border-moss/20 bg-white px-3 py-2"
+                      className="focus-ring mt-2 w-full rounded-md border border-moss/20 bg-white px-2.5 py-1.5"
                       onChange={(event) =>
                         setQuiz((current) => ({
                           ...current,
@@ -921,7 +936,7 @@ export default function Home() {
                   <label className="block text-sm font-semibold text-ink/70">
                     Typical symptom severity
                     <select
-                      className="focus-ring mt-2 w-full rounded-md border border-moss/20 bg-white px-3 py-2"
+                      className="focus-ring mt-2 w-full rounded-md border border-moss/20 bg-white px-2.5 py-1.5"
                       onChange={(event) =>
                         setQuiz((current) => ({
                           ...current,
@@ -937,7 +952,7 @@ export default function Home() {
                   </label>
                 </div>
                 <button
-                  className="focus-ring mt-4 w-full rounded-md bg-moss px-4 py-3 font-semibold text-white hover:bg-ink"
+                  className="focus-ring mt-3 w-full rounded-md bg-moss px-4 py-2 font-semibold text-white hover:bg-ink"
                   onClick={applyQuizEstimate}
                   type="button"
                 >
@@ -945,133 +960,73 @@ export default function Home() {
                 </button>
               </div>
             )}
-
-          </section>
-
-          <section className="rounded-lg border border-moss/10 bg-white p-3 shadow-soft">
-            <h2 className="text-lg font-bold text-ink">Profile manager</h2>
-            <label className="mt-3 block">
-              <span className="text-sm font-semibold text-ink/70">Profile name</span>
-              <input
-                className="focus-ring mt-2 w-full rounded-md border border-moss/20 px-3 py-2.5 text-sm"
-                onChange={(event) => setProfileName(event.target.value)}
-                placeholder="Example: Joey, Mom, Child"
-                value={profileName}
-              />
-            </label>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
-              <button
-                className="focus-ring flex w-full items-center justify-center gap-2 rounded-md bg-moss px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-ink"
-                onClick={saveCurrentProfile}
-                type="button"
-              >
-                <Save size={16} />
-                Save profile
-              </button>
-              <button
-                className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-4 py-2.5 text-sm font-semibold text-moss transition hover:bg-mint"
-                onClick={startNewProfile}
-                type="button"
-              >
-                <UserPlus size={16} />
-                New profile
-              </button>
-            </div>
-            {savedProfiles.length > 0 ? (
-              <label className="mt-3 block">
-                <span className="text-xs font-semibold uppercase text-ink/50">Switch profiles</span>
-                <div className="mt-2 flex gap-2">
-                  <select
-                    className="focus-ring min-w-0 flex-1 rounded-md border border-moss/20 bg-white px-3 py-2.5 text-sm font-semibold text-ink"
-                    onChange={(event) => selectSavedProfile(event.target.value)}
-                    value={activeProfileId}
-                  >
-                    {savedProfiles.map((savedProfile) => (
-                      <option key={savedProfile.id} value={savedProfile.id}>
-                        {savedProfile.name} ({savedProfile.logs.length} logs)
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    aria-label="Remove selected profile"
-                    className="focus-ring grid h-11 w-11 shrink-0 place-items-center rounded-md border border-red-200 text-red-700 transition hover:bg-red-50"
-                    onClick={removeActiveProfile}
-                    type="button"
-                  >
-                    <Trash2 size={17} />
-                  </button>
-                </div>
-              </label>
-            ) : (
-              <p className="mt-3 rounded-md bg-mint/35 p-3 text-sm text-ink/65">
-                Name this setup, then save it so you can switch back later.
-              </p>
-            )}
           </section>
         </aside>
 
         <div className="order-2 contents">
-            <section className="flex min-h-[420px] flex-col rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-2 xl:row-span-2 xl:row-start-1">
+            <section className="flex min-h-[360px] flex-col rounded-lg border border-moss/10 bg-white p-2.5 shadow-soft xl:col-start-2 xl:row-span-2 xl:row-start-1">
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold uppercase text-fern">Today</p>
-                  <h2 className="mt-1 text-2xl font-bold text-ink">
+                  <h2 className="mt-1 text-xl font-bold text-ink">
                     {todayLevel ?? "No forecast yet"}
                   </h2>
                   <p className="mt-1 text-sm text-ink/60">Environmental Risk</p>
                 </div>
                 <div
-                  className={`grid h-24 w-24 shrink-0 place-items-center rounded-full border-8 sm:h-28 sm:w-28 ${
+                  className={`grid h-20 w-20 shrink-0 place-items-center rounded-full border-[7px] sm:h-24 sm:w-24 ${
                     todayLevel ? levelStyles[todayLevel] : "border-moss/10 bg-mint/50 text-moss"
                   }`}
                 >
-                  <span className="text-3xl font-black">{today ? Math.round(today.score) : "--"}</span>
+                  <span className="text-xl font-black">{today ? Math.round(today.score) : "--"}</span>
                 </div>
               </div>
 
-              <div className="mt-5 h-3 overflow-hidden rounded-full bg-moss/10">
+              <div className="mt-3 h-3 overflow-hidden rounded-full bg-moss/10">
                 <div
                   className={`h-full rounded-full transition-all ${today ? scoreColor(today.score) : "bg-moss/20"}`}
                   style={{ width: `${today ? today.score : 0}%` }}
                 />
               </div>
 
-              <div className="my-5 border-t border-moss/10" />
+              <div className="my-4 border-t border-moss/10" />
 
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-semibold uppercase text-fern">Your Reaction Score</p>
+                  <p className="text-sm font-semibold uppercase text-fern">Your AllergyScore</p>
                   <p className="mt-1 text-sm text-ink/60">Based on your sensitivities</p>
-                  <h3 className="mt-3 text-4xl font-black text-ink">
-                    {reaction ? Math.round(reaction.score) : "--"}
+                  <h3 className="mt-3 text-xl font-black text-ink">
+                    {allergyScore ? Math.round(allergyScore.score) : "--"}
                   </h3>
                   <span
                     className={`mt-2 inline-flex rounded-full border px-3 py-1 text-sm font-bold ${
-                      reactionLevel ? levelStyles[reactionLevel] : "border-moss/10 bg-mint/50 text-moss"
+                      allergyScoreLevel ? levelStyles[allergyScoreLevel] : "border-moss/10 bg-mint/50 text-moss"
                     }`}
                   >
-                    {reactionLevel ?? "Waiting"}
+                    {allergyScoreLevel ?? "Waiting"}
                   </span>
                 </div>
-                <div className="h-24 w-24 rounded-full bg-moss/10 p-2">
+                <div className="h-20 w-20 rounded-full bg-moss/10 p-2">
                   <div className="grid h-full w-full place-items-center rounded-full bg-white">
                     <div
-                      className="h-16 w-16 rounded-full"
+                      className="h-12 w-12 rounded-full"
                       style={{
-                        background: `conic-gradient(#52b788 ${reaction?.score ?? 0}%, #e6ece7 0)`
+                        background: `conic-gradient(#52b788 ${allergyScore?.score ?? 0}%, #e6ece7 0)`
                       }}
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="mt-5 rounded-md bg-skywash p-3">
-                <div className="flex items-start gap-3">
-                  <SunMedium className="mt-0.5 text-moss" size={20} />
+              <div className="mt-3 overflow-hidden rounded-md bg-skywash">
+                <div className="p-3">
                   <div>
                     <h3 className="font-bold text-ink">What should I do?</h3>
+                    <p className="mt-0.5 text-xs font-semibold uppercase text-ink/45">
+                      Based on your AllergyScore
+                    </p>
                     <p className="mt-1 text-sm leading-6 text-ink/75">
-                      {reactionLevel ? recommendationFor(reactionLevel, profile.asthmaRisk) : "Add a location to get guidance."}
+                      {allergyScoreLevel ? recommendationFor(allergyScoreLevel, profile.asthmaRisk) : "Add a location to get guidance."}
                     </p>
                     {profile.asthmaRisk ? (
                       <div className="mt-2 flex flex-wrap gap-3 text-xs font-semibold text-moss">
@@ -1085,33 +1040,27 @@ export default function Home() {
                     ) : null}
                   </div>
                 </div>
+
+                {allergyScore ? (
+                  <div className="border-t border-moss/10 bg-white/45 p-3">
+                    <p className="text-sm font-bold text-ink">Personal Risk Factors</p>
+                    <p className="mt-2 text-sm leading-6 text-ink/70">
+                      Your AllergyScore is mainly based on {allergyLabels[allergyScore.topAllergen].toLowerCase()} pollen today.
+                      AllergyScore compares the local pollen index with your saved sensitivity settings, then adjusts the guidance for your profile.
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-ink/70">
+                      {profile.asthmaRisk
+                        ? "Because asthma risk is turned on, the app uses more cautious severity guidance."
+                        : "Asthma risk is not turned on, so the app is using standard severity guidance."}
+                    </p>
+                  </div>
+                ) : null}
               </div>
-
-              {reaction ? (
-                <p className="mt-4 text-sm font-medium text-ink/70">
-                  {allergyLabels[reaction.topAllergen]} pollen is your biggest trigger today ({reaction.topContributionPercent}% of reaction score).
-                </p>
-              ) : null}
-
-              {reaction ? (
-                <div className="mt-4 rounded-md border border-moss/10 bg-[#fbfdf9] p-3">
-                  <p className="text-sm font-bold text-ink">Personal Risk Factors</p>
-                  <p className="mt-2 text-sm leading-6 text-ink/70">
-                    Your reaction score is mainly based on {allergyLabels[reaction.topAllergen].toLowerCase()} pollen today.
-                    AllergyScore compares the local pollen index with your saved sensitivity settings, then adjusts the guidance for your profile.
-                  </p>
-                  <p className="mt-2 text-sm leading-6 text-ink/70">
-                    {profile.asthmaRisk
-                      ? "Because asthma risk is turned on, the app uses more cautious severity guidance."
-                      : "Asthma risk is not turned on, so the app is using standard severity guidance."}
-                  </p>
-                </div>
-              ) : null}
             </section>
 
-          <section className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-span-3 xl:col-start-1 xl:row-start-5">
+          <section className="rounded-lg border border-moss/10 bg-white p-2.5 shadow-soft xl:col-span-3 xl:col-start-1 xl:row-start-5">
             <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-center">
-              <h2 className="text-lg font-bold text-ink">Your 5-day reaction forecast</h2>
+              <h2 className="text-base font-bold text-ink">Your 5-day AllergyScore forecast</h2>
               <span className="text-sm text-ink/60">
                 {forecast
                   ? `${
@@ -1124,7 +1073,7 @@ export default function Home() {
                   : "Waiting for location"}
               </span>
             </div>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               {severity.length > 0
                 ? severity.map((day) => {
                     const ConditionIcon = conditionIcon(day);
@@ -1136,65 +1085,122 @@ export default function Home() {
                           <ConditionIcon className="text-fern" size={18} />
                         </div>
                         <div className="mt-3 flex items-center justify-between">
-                          <span className={`rounded-full border px-3 py-1 text-sm font-bold ${levelStyles[displayedLevel(day.reactionScore.score, profile.asthmaRisk)]}`}>
-                            {displayedLevel(day.reactionScore.score, profile.asthmaRisk)}
+                          <span className={`rounded-full border px-3 py-1 text-sm font-bold ${levelStyles[displayedLevel(day.allergyScore.score, profile.asthmaRisk)]}`}>
+                            {displayedLevel(day.allergyScore.score, profile.asthmaRisk)}
                           </span>
-                          <span className="flex items-center gap-2 text-2xl font-black text-ink">
+                          <span className="flex items-center gap-2 text-xl font-black text-ink">
                             <span className="text-lg text-ink/50">{trendArrow(day, today)}</span>
-                            {Math.round(day.reactionScore.score)}
+                            {Math.round(day.allergyScore.score)}
                           </span>
                         </div>
-                        <div className="mt-4 h-2 overflow-hidden rounded-full bg-moss/10">
+                        <div className="mt-3 h-2 overflow-hidden rounded-full bg-moss/10">
                           <div
-                            className={`h-full ${scoreColor(day.reactionScore.score)}`}
-                            style={{ width: `${day.reactionScore.score}%` }}
+                            className={`h-full ${scoreColor(day.allergyScore.score)}`}
+                            style={{ width: `${day.allergyScore.score}%` }}
                           />
                         </div>
                       </article>
                     );
                   })
                 : Array.from({ length: 5 }, (_, index) => (
-                    <div key={index} className="h-36 rounded-md border border-dashed border-moss/20 bg-mint/20" />
+                    <div key={index} className="h-28 rounded-md border border-dashed border-moss/20 bg-mint/20" />
               ))}
             </div>
           </section>
 
           <section className="grid gap-4 xl:col-span-3 xl:col-start-1 xl:row-start-6 xl:grid-cols-2">
-            <div className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft">
-              <h2 className="text-lg font-bold text-ink">Your allergy pattern</h2>
-              <p className="mt-2 text-sm leading-6 text-ink/70">
-                {patternTrigger} pollen is your top trigger based on your profile.
-              </p>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-md bg-mint/35 p-3">
-                  <p className="text-xs font-semibold uppercase text-ink/50">Avg symptoms</p>
-                  <p className="mt-1 text-2xl font-black text-ink">
-                    {logs.length > 0 ? averageSymptomScore.toFixed(1) : "--"}
+            <div className="rounded-lg border border-moss/10 bg-white p-2.5 shadow-soft">
+              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+                <div>
+                  <h2 className="text-base font-bold text-ink">Profile manager</h2>
+                  <p className="mt-1 text-sm text-ink/60">
+                    Save profiles for different people and switch without losing symptom history.
                   </p>
+                </div>
+                <span className="rounded-full border border-moss/10 bg-mint/35 px-3 py-1 text-xs font-bold text-moss">
+                  {savedProfiles.length} saved
+                </span>
+              </div>
+
+              <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-md bg-mint/35 p-3">
+                  <p className="text-xs font-semibold uppercase text-ink/50">Current</p>
+                  <p className="mt-1 truncate text-base font-black text-ink">{profileName || "My profile"}</p>
                 </div>
                 <div className="rounded-md bg-skywash p-3">
-                  <p className="text-xs font-semibold uppercase text-ink/50">High days</p>
-                  <p className="mt-1 text-2xl font-black text-ink">{highSymptomDays}</p>
+                  <p className="text-xs font-semibold uppercase text-ink/50">Logs</p>
+                  <p className="mt-1 text-base font-black text-ink">{logs.length}</p>
                 </div>
                 <div className="rounded-md bg-mint/35 p-3">
-                  <p className="text-xs font-semibold uppercase text-ink/50">Worst day</p>
-                  <p className="mt-1 text-sm font-bold text-ink">
-                    {worstLog ? `${formatDate(worstLog.date)} (${worstLog.score}/10)` : "--"}
-                  </p>
+                  <p className="text-xs font-semibold uppercase text-ink/50">Location</p>
+                  <p className="mt-1 truncate text-sm font-bold text-ink">{profile.locationLabel}</p>
                 </div>
               </div>
-              <div className="mt-4 rounded-md border border-moss/10 bg-[#fbfdf9] p-3 text-sm text-ink/70">
-                {hasTrendInsights
-                  ? `${patternTrigger} has been the strongest signal across your recent symptom logs.`
-                  : `Log symptoms for ${3 - logs.length} more day${3 - logs.length === 1 ? "" : "s"} to unlock trend insights.`}
+
+              <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                <label className="block">
+                  <span className="text-sm font-semibold text-ink/70">Profile name</span>
+                  <input
+                    className="focus-ring mt-2 w-full rounded-md border border-moss/20 px-2.5 py-2 text-sm"
+                    onChange={(event) => setProfileName(event.target.value)}
+                    placeholder="Example: Joey, Mom, Child"
+                    value={profileName}
+                  />
+                </label>
+                <div className="grid gap-2 sm:grid-cols-2 lg:min-w-[280px]">
+                  <button
+                    className="focus-ring flex w-full items-center justify-center gap-2 rounded-md bg-moss px-2.5 py-1.5 text-sm font-semibold text-white transition hover:bg-ink"
+                    onClick={saveCurrentProfile}
+                    type="button"
+                  >
+                    <Save size={16} />
+                    Save profile
+                  </button>
+                  <button
+                    className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-2.5 py-1.5 text-sm font-semibold text-moss transition hover:bg-mint"
+                    onClick={startNewProfile}
+                    type="button"
+                  >
+                    <UserPlus size={16} />
+                    New profile
+                  </button>
+                </div>
               </div>
-              <div className="mt-3 rounded-md bg-yellow-50 p-3 text-sm text-yellow-900">
-                {patternSuggestion}
-              </div>
+
+              {savedProfiles.length > 0 ? (
+                <label className="mt-3 block">
+                  <span className="text-xs font-semibold uppercase text-ink/50">Switch profiles</span>
+                  <div className="mt-2 flex gap-2">
+                    <select
+                      className="focus-ring min-w-0 flex-1 rounded-md border border-moss/20 bg-white px-2.5 py-2 text-sm font-semibold text-ink"
+                      onChange={(event) => selectSavedProfile(event.target.value)}
+                      value={activeProfileId}
+                    >
+                      {savedProfiles.map((savedProfile) => (
+                        <option key={savedProfile.id} value={savedProfile.id}>
+                          {savedProfile.name} ({savedProfile.logs.length} logs)
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      aria-label="Remove selected profile"
+                      className="focus-ring grid h-10 w-10 shrink-0 place-items-center rounded-md border border-red-200 text-red-700 transition hover:bg-red-50"
+                      onClick={removeActiveProfile}
+                      type="button"
+                    >
+                      <Trash2 size={17} />
+                    </button>
+                  </div>
+                </label>
+              ) : (
+                <p className="mt-3 rounded-md bg-mint/35 p-3 text-sm text-ink/65">
+                  Name this setup, then save it so you can switch back later.
+                </p>
+              )}
             </div>
 
-            <div className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft">
-              <h2 className="text-lg font-bold text-ink">Symptom journal</h2>
+            <div className="rounded-lg border border-moss/10 bg-white p-2.5 shadow-soft">
+              <h2 className="text-base font-bold text-ink">Symptom journal</h2>
             <label className="mt-3 block">
                 <div className="flex justify-between text-sm font-semibold text-ink/70">
                   <span>Today&apos;s symptoms</span>
@@ -1217,24 +1223,59 @@ export default function Home() {
             <label className="mt-3 block">
               <span className="text-sm font-semibold text-ink/70">Notes</span>
               <textarea
-                className="focus-ring mt-2 min-h-20 w-full rounded-md border border-moss/20 px-3 py-2 text-sm"
+                className="focus-ring mt-2 min-h-16 w-full rounded-md border border-moss/20 px-2.5 py-1.5 text-sm"
                 onChange={(event) => setSymptomNotes(event.target.value)}
                 placeholder="Symptoms, medication, outdoor exposure, sleep, or breathing notes"
                 value={symptomNotes}
               />
             </label>
+            {loggedToday && !editingTodayLog ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <button
+                  className="focus-ring flex w-full items-center justify-center rounded-md bg-emerald-600 px-2.5 py-1.5 text-sm font-semibold text-white"
+                  disabled
+                  type="button"
+                >
+                  Logged today
+                </button>
+                <button
+                  className="focus-ring flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-2.5 py-1.5 text-sm font-semibold text-moss transition hover:bg-mint"
+                  onClick={editTodayLog}
+                  type="button"
+                >
+                  <Pencil size={15} />
+                  Edit today&apos;s log
+                </button>
+                <button
+                  className="focus-ring flex w-full items-center justify-center rounded-md border border-red-200 px-2.5 py-1.5 text-sm font-semibold text-red-700 transition hover:bg-red-50"
+                  onClick={removeTodayLog}
+                  type="button"
+                >
+                  Remove today&apos;s log
+                </button>
+              </div>
+            ) : (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <button
+                  className="focus-ring flex w-full items-center justify-center rounded-md bg-moss px-2.5 py-1.5 text-sm font-semibold text-white transition hover:bg-ink"
+                  onClick={logSymptoms}
+                  type="button"
+                >
+                  {editingTodayLog ? "Save changes" : "Log symptoms"}
+                </button>
+                {editingTodayLog ? (
+                  <button
+                    className="focus-ring flex w-full items-center justify-center rounded-md border border-moss/20 px-2.5 py-1.5 text-sm font-semibold text-moss transition hover:bg-mint"
+                    onClick={cancelTodayLogEdit}
+                    type="button"
+                  >
+                    Cancel edit
+                  </button>
+                ) : null}
+              </div>
+            )}
             <button
-                className={`focus-ring mt-3 flex w-full items-center justify-center rounded-md px-3 py-2 text-sm font-semibold text-white transition ${
-                  loggedToday ? "bg-emerald-600" : "bg-moss hover:bg-ink"
-                }`}
-                disabled={loggedToday}
-                onClick={logSymptoms}
-                type="button"
-              >
-              {loggedToday ? "Logged today" : "Log symptoms"}
-            </button>
-            <button
-              className="focus-ring mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-3 py-2 text-sm font-semibold text-moss transition hover:bg-mint"
+              className="focus-ring mt-2 flex w-full items-center justify-center gap-2 rounded-md border border-moss/20 px-2.5 py-1.5 text-sm font-semibold text-moss transition hover:bg-mint"
               onClick={generateDoctorReport}
               type="button"
             >
@@ -1244,7 +1285,7 @@ export default function Home() {
               {logs.length > 0 ? (
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   {logs.slice(0, 6).map((log) => (
-                    <div key={log.date} className="rounded-md bg-mint/35 px-3 py-2 text-sm">
+                    <div key={log.date} className="rounded-md bg-mint/35 px-2.5 py-1.5 text-sm">
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-ink/70">{formatDate(log.date)}</span>
                         <span className="font-bold text-ink">{log.score}/10</span>
@@ -1261,14 +1302,14 @@ export default function Home() {
         </div>
 
         <aside className="order-3 contents">
-          <section className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-3 xl:row-start-1">
+          <section className="rounded-lg border border-moss/10 bg-white p-2.5 shadow-soft xl:col-start-3 xl:row-start-1">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-ink">Trigger breakdown</h2>
+              <h2 className="text-base font-bold text-ink">Trigger breakdown</h2>
               <Activity className="text-fern" size={21} />
             </div>
             <div className="mt-3 rounded-md bg-mint/35 p-3">
               <p className="text-sm font-semibold text-ink/60">Total pollen today</p>
-              <p className="mt-1 text-2xl font-black text-ink">
+              <p className="mt-1 text-xl font-black text-ink">
                 {formatPollenValue(totalPollen, forecast?.pollenUnit)}
               </p>
               {forecast?.pollenUnit === "upi" ? (
@@ -1277,7 +1318,7 @@ export default function Home() {
                 </p>
               ) : null}
             </div>
-            <div className="mt-4 space-y-4">
+            <div className="mt-3 space-y-4">
               {(Object.keys(allergyLabels) as AllergyKey[]).map((key) => {
                 const count = today?.pollenCounts[key] ?? 0;
                 const isUpi = forecast?.pollenUnit === "upi";
@@ -1314,33 +1355,11 @@ export default function Home() {
               })}
             </div>
             {forecast && !forecast.hasPollenData ? (
-              <div className="mt-5 flex gap-3 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">
+              <div className="mt-3 flex gap-3 rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-900">
                 <AlertTriangle className="mt-0.5 shrink-0" size={18} />
                 <span>{forecast.message}</span>
               </div>
             ) : null}
-          </section>
-
-          <section className="rounded-lg border border-moss/10 bg-white p-4 shadow-soft xl:col-start-3 xl:row-start-2">
-            <h2 className="text-lg font-bold text-ink">Planning</h2>
-            <div className="mt-3 grid gap-3">
-              <div className="rounded-md bg-skywash p-3">
-                <p className="text-sm font-bold text-ink">Peak hour warning</p>
-                <p className="mt-1 text-sm text-ink/70">{peakWindow}</p>
-              </div>
-              <div className="rounded-md bg-mint/35 p-3">
-                <p className="text-sm font-bold text-ink">Tomorrow prep</p>
-                <p className="mt-1 text-sm text-ink/70">
-                  {tomorrow
-                    ? tomorrowDelta > 5
-                      ? `Tomorrow is ${tomorrowDelta} points higher. Plan meds before outdoor time.`
-                      : tomorrowDelta < -5
-                        ? `Tomorrow looks ${Math.abs(tomorrowDelta)} points easier than today.`
-                        : "Tomorrow looks similar to today. Keep your current plan."
-                    : "Waiting for tomorrow's forecast."}
-                </p>
-              </div>
-            </div>
           </section>
 
           {error ? (

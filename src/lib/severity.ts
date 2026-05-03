@@ -3,7 +3,7 @@ import type {
   DayForecast,
   ForecastHour,
   PollenCounts,
-  ReactionScore,
+  AllergyScoreResult,
   Sensitivities,
   SeverityLevel,
   SeverityResult,
@@ -18,10 +18,10 @@ const POLLEN_THRESHOLDS: Record<"tree" | "grass" | "weed", number> = {
 };
 
 export const recommendationByLevel: Record<SeverityLevel, string> = {
-  Low: "Air quality is manageable for you today.",
-  Moderate: "Consider taking allergy medication before extended outdoor exposure.",
-  High: "Limit outdoor time. Take medication and monitor symptoms.",
-  Severe: "Stay indoors if possible. High personal risk today."
+  Low: "Outdoor activity should be manageable today. Keep tracking symptoms so your AllergyScore gets more useful over time.",
+  Moderate: "Consider taking allergy medication before extended outdoor exposure, especially during higher-pollen parts of the day.",
+  High: "Limit long outdoor time, keep windows closed, and shower or change clothes after being outside.",
+  Severe: "Avoid extended outdoor exposure if possible. Use medication as directed and choose indoor plans when you can."
 };
 
 export function defaultProfile(): UserProfile {
@@ -199,12 +199,12 @@ function getDailyPollenCounts(day: DayForecast): PollenCounts {
   };
 }
 
-function getReactionScore(
+function getAllergyScoreResult(
   pollenCounts: PollenCounts,
   allergies: Record<AllergyKey, boolean>,
   sensitivities: Sensitivities,
   mode: UserProfile["mode"]
-): ReactionScore {
+): AllergyScoreResult {
   const effectiveAllergies =
     mode === "general"
       ? { tree: true, grass: true, weed: true }
@@ -286,7 +286,7 @@ export function calculateDaySeverity(
   const sensitivityRisk = getSensitivityRisk(profile.allergies, profile.sensitivities);
   const symptomRisk = profile.currentSymptoms * 10;
   const weatherModifier = getWeatherModifier(day);
-  const reactionScore = getReactionScore(
+  const allergyScore = getAllergyScoreResult(
     pollenCounts,
     profile.allergies,
     profile.sensitivities,
@@ -308,7 +308,7 @@ export function calculateDaySeverity(
     weatherModifier,
     triggerBreakdown,
     pollenCounts,
-    reactionScore,
+    allergyScore,
     mainTrigger: getMainTrigger(triggerBreakdown, profile.allergies),
     hasPollenData
   };

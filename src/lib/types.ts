@@ -23,7 +23,7 @@ export type SymptomLog = {
   date: string;
   score: number;
   notes?: string;
-  reactionScore?: number;
+  allergyScore?: number;
   topTrigger?: AllergyKey;
 };
 
@@ -52,7 +52,7 @@ export type TriggerBreakdown = {
 
 export type PollenCounts = Record<AllergyKey, number>;
 
-export type ReactionScore = {
+export type AllergyScoreResult = {
   score: number;
   level: SeverityLevel;
   topAllergen: AllergyKey;
@@ -70,7 +70,7 @@ export type SeverityResult = {
   weatherModifier: number;
   triggerBreakdown: TriggerBreakdown;
   pollenCounts: PollenCounts;
-  reactionScore: ReactionScore;
+  allergyScore: AllergyScoreResult;
   mainTrigger: string;
   hasPollenData: boolean;
 };
