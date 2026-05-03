@@ -209,7 +209,7 @@ function getReactionScore(
     (next, key) => {
       next[key] =
         activeKeys.includes(key)
-          ? pollenCounts[key] * 7 * effectiveSensitivities[key]
+          ? pollenCounts[key] * 3 * effectiveSensitivities[key]
           : 0;
       return next;
     },
