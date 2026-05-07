@@ -2,6 +2,8 @@
 
 AllergyScore is a personalized pollen and weather risk dashboard that helps users understand their daily allergy risk from location, pollen index data, sensitivity settings, symptoms, and breathing sensitivity.
 
+Demo video here: https://youtu.be/WzH9TiEJzfc?si=0abj_biJBkROWMtO
+
 ## Features
 
 - Location-based allergy dashboard with city/ZIP search
